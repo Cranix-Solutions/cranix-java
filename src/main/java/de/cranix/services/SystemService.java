@@ -212,10 +212,11 @@ public class SystemService extends Service {
 
         //Disk usage
         StringBuilder data = new StringBuilder();
-        String[] program = new String[1];
+        String[] program = new String[2];
         StringBuffer reply = new StringBuffer();
         StringBuffer error = new StringBuffer();
         program[0] = "/usr/bin/df";
+        program[1] = "-h";
         int ret = CrxSystemCmd.exec(program, reply, error, "");
         String[] lines = reply.toString().split("\\n");
         for(String line: reply.toString().split("\\n")) {
