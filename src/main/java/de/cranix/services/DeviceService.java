@@ -133,6 +133,16 @@ public class DeviceService extends Service {
             //Start the transaction
             logger.debug("Transaction active 0:" + this.em.getTransaction().isActive());
             this.em.getTransaction().begin();
+            for(Session deviceSession: device.getSessions()){
+                if(this.session.equals(deviceSession)){
+                    this.em.getTransaction().rollback();
+                    return new CrxResponse("ERROR", "You must not delete the device on which you are logged in.");
+                }
+                this.em.remove(deviceSession);
+            }
+            this.em.getTransaction().commit();
+            logger.debug("Transaction 1 closed.");
+            this.em.getTransaction().begin();
             if (hwconf != null) {
                 //Remove device from the hwconf.
                 hwconf.getDevices().remove(device);
@@ -156,16 +166,6 @@ public class DeviceService extends Service {
                 sl.getDevices().remove(device);
                 this.em.merge(sl);
             }
-            //Clean up printers
-            for (Printer pr : device.getAvailablePrinters()) {
-                pr.getAvailableForDevices().remove(device);
-                this.em.merge(pr);
-            }
-            if (device.getDefaultPrinter() != null) {
-                Printer pr = device.getDefaultPrinter();
-                pr.getDefaultForDevices().remove(device);
-                this.em.merge(pr);
-            }
             //Clean up categories
             for (Category cat : device.getCategories()) {
                 cat.getDevices().remove(device);
@@ -176,6 +176,7 @@ public class DeviceService extends Service {
                 loggedInUser.getLoggedOn().remove(device);
                 this.em.merge(loggedInUser);
             }
+
             //Remove salt sls file if exists
             File saltFile = new File("/srv/salt/crx_device_" + device.getName() + ".sls");
             if (saltFile.exists()) {
@@ -187,14 +188,14 @@ public class DeviceService extends Service {
                 }
             }
             //this.deletAllConfigs(device);
+            this.em.getTransaction().commit();
+            logger.debug("Transaction 2. closed.");
+            this.em.getTransaction().begin();
             room.getDevices().remove(device);
             this.em.merge(room);
-            this.em.getTransaction().commit();
-            logger.debug("Transaction active 1:" + this.em.getTransaction().isActive());
-            this.em.getTransaction().begin();
             this.em.remove(device);
             this.em.getTransaction().commit();
-            logger.debug("Transaction closed 2:" + this.em.getTransaction().isActive());
+            logger.debug("Transaction 3. closed.");
             startPlugin("delete_device", device);
             if (atomic && needReloadSalt) {
                 new SoftwareService(this.session, this.em).rewriteTopSls();
@@ -206,6 +207,9 @@ public class DeviceService extends Service {
             }
             return new CrxResponse("OK", "%s was deleted successfully.", null, name);
         } catch (Exception e) {
+            if(this.em.getTransaction().isActive()){
+                this.em.getTransaction().rollback();
+            }
             logger.error("device: " + device.getName() + " " + e.getMessage(), e);
             return new CrxResponse("ERROR", e.getMessage());
         }
@@ -707,9 +711,7 @@ public class DeviceService extends Service {
             }
             this.em.getTransaction().begin();
             device.setDefaultPrinter(printer);
-            printer.getDefaultForDevices().add(device);
             this.em.merge(device);
-            this.em.merge(printer);
             this.em.getTransaction().commit();
             Map<String, String> tmpMap = new HashMap<>();
             tmpMap.put("name", printer.getName());
@@ -738,9 +740,7 @@ public class DeviceService extends Service {
             try {
                 this.em.getTransaction().begin();
                 device.setDefaultPrinter(null);
-                printer.getDefaultForDevices().remove(device);
                 this.em.merge(device);
-                this.em.merge(printer);
                 this.em.getTransaction().commit();
                 Map<String, String> tmpMap = new HashMap<>();
                 tmpMap.put("name", printer.getName());
@@ -772,9 +772,7 @@ public class DeviceService extends Service {
             }
             this.em.getTransaction().begin();
             device.getAvailablePrinters().add(printer);
-            printer.getDefaultForDevices().add(device);
             this.em.merge(device);
-            this.em.merge(printer);
             this.em.getTransaction().commit();
             Map<String, String> tmpMap = new HashMap<>();
             tmpMap.put("name", printer.getName());
@@ -802,9 +800,7 @@ public class DeviceService extends Service {
             }
             this.em.getTransaction().begin();
             device.getAvailablePrinters().remove(printer);
-            printer.getDefaultForDevices().remove(device);
             this.em.merge(device);
-            this.em.merge(printer);
             this.em.getTransaction().commit();
             Map<String, String> tmpMap = new HashMap<>();
             tmpMap.put("name", printer.getName());
@@ -1070,6 +1066,7 @@ public class DeviceService extends Service {
             oldDevice.setRow(device.getRow());
             oldDevice.setInventary(device.getInventary());
             oldDevice.setSerial(device.getSerial());
+            oldDevice.setLocality(device.getLocality());
             logger.debug("OLD-Device-After-Merge" + oldDevice);
             this.em.getTransaction().begin();
             this.em.merge(oldDevice);
