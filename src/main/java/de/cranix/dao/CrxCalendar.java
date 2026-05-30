@@ -1,5 +1,6 @@
 package de.cranix.dao;
 
+import com.fasterxml.jackson.annotation.JsonBackReference;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import javax.persistence.*;
@@ -12,11 +13,11 @@ import static javax.persistence.TemporalType.TIMESTAMP;
 
 @Entity
 @Table(
-	name="CrxCalendar",
-	uniqueConstraints = { @UniqueConstraint(columnNames = { "uuid" }) }
+    name="CrxCalendar",
+    uniqueConstraints = { @UniqueConstraint(columnNames = { "uuid" }) }
 )
 @NamedQueries({
-	@NamedQuery(name="CrxCalendar.findAll", query="SELECT c FROM CrxCalendar c")
+    @NamedQuery(name="CrxCalendar.findAll", query="SELECT c FROM CrxCalendar c")
 })
 public class CrxCalendar extends AbstractEntity {
 
@@ -78,6 +79,11 @@ public class CrxCalendar extends AbstractEntity {
             inverseJoinColumns = {@JoinColumn(name = "user_id", columnDefinition = "BIGINT UNSIGNED NOT NULL")}
     )
     private List<User> users = new ArrayList<User>();
+
+    @ManyToOne
+    @JsonBackReference
+    @JoinColumn(name="course_id", columnDefinition ="BIGINT UNSIGNED")
+    private Course course;
 
     @Transient
     private String category = "";
@@ -143,9 +149,19 @@ public class CrxCalendar extends AbstractEntity {
         this.description = description;
     }
 
-    public String getLocation() { return location; }
+    public String getLocation() {
+        if(location.isEmpty() && room != null) {
+            return room.getName();
+        }
+        return location;
+    }
 
-    public void setLocation(String location) { this.location = location; }
+    public void setLocation(String location) {
+        //Set location only if this is not equal to the room name.
+        if(room == null || !room.getName().equals(location)) {
+             this.location = location;
+        }
+    }
 
     public List<Group> getGroups() {
         return groups;
@@ -180,14 +196,14 @@ public class CrxCalendar extends AbstractEntity {
     }
 
     public Long getDuration() {
-	    if( this.duration == null ) {
-	     	this.duration = this.end.getTime() - this.start.getTime();
-	    }
-	    return this.duration;
+        if( this.duration == null ) {
+             this.duration = this.end.getTime() - this.start.getTime();
+        }
+        return this.duration;
     }
 
     public void setDuration(Long duration) {
-	    this.duration = duration;
+        this.duration = duration;
     }
 
     public String getRrule() {
@@ -226,5 +242,60 @@ public class CrxCalendar extends AbstractEntity {
     }
     public void setGroupIds(List<Long> groupIds) {
         this.groupIds = groupIds;
+    }
+
+    public void addUser(User user){
+        if(!users.contains(user)){
+            users.add(user);
+        }
+    }
+
+    public void removeUser(User user){
+        if(users.contains(user)){
+            users.remove(user);
+        }
+    }
+
+    public Course getCourse() {
+        return course;
+    }
+
+    public void setCourse(Course course) {
+        this.course = course;
+    }
+
+    public Long getCourseId() {
+        return this.course == null ? null : this.course.getId();
+    }
+
+    public boolean overlapsWith(CrxCalendar other) {
+        // Zwei Termine überschneiden sich, wenn:
+        // 1. Der Start dieses Termins vor dem Ende des anderen Termins liegt UND
+        // 2. Das Ende dieses Termins nach dem Start des anderen Termins liegt
+
+        // Null-Check
+        if (other == null || this.start == null || this.end == null ||
+            other.start == null || other.end == null) {
+            return false;
+        }
+
+        //Check for over lapping
+        return this.start.before(other.end) && this.end.after(other.start);
+    }
+
+    public boolean overlapsWith(List<CrxCalendar> others) {
+        for(CrxCalendar other: others){
+            if(this.overlapsWith(other)){
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * Alternative statische Methode für den Vergleich von zwei Terminen
+     */
+    public static boolean doAppointmentsOverlap(CrxCalendar a1, CrxCalendar a2) {
+        if (a1 == null || a2 == null) return false;
+        return a1.overlapsWith(a2);
     }
 }
