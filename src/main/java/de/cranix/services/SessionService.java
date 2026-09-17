@@ -238,12 +238,13 @@ public class SessionService extends Service {
     }
 
     public void save(Session obj) {
-        if (em != null) {
+        if (this.em != null) {
             try {
                 logger.debug("save session:" + obj);
                 this.em.getTransaction().begin();
                 this.em.persist(obj);
-                User user = obj.getUser();
+                this.em.getTransaction().commit();
+                User user = this.em.find(User.class, obj.getUserId());
                 Device device = obj.getDevice();
                 if (device != null) {
                     if (!user.getLoggedOn().contains(device)) {
@@ -254,14 +255,14 @@ public class SessionService extends Service {
                 }
                 user.getSessions().add(obj);
                 this.em.merge(user);
-                this.em.flush();
-                this.em.refresh(obj);
                 this.em.getTransaction().commit();
             } catch (Exception e) {
                 logger.debug("save session failed:" + obj);
                 logger.error(e.getMessage());
             }
-        }
+        } else {
+	  logger.debug("save session failed there is no entity manager");
+	}
     }
 
     private Session find(Long id) {
