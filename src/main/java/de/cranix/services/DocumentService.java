@@ -141,13 +141,216 @@ public class DocumentService extends Service {
     }
 
     /* ------------------------------------------------------------------ */
+    /* Folder management                                                   */
+    /* ------------------------------------------------------------------ */
+
+    public boolean isFolderCreator(DocumentFolder folder) {
+        return this.isSuperuser() || this.session.getUser().equals(folder.getCreator());
+    }
+
+    private List<DocumentFolder> getOwnFolders() {
+        List<DocumentFolder> folders = new ArrayList<>();
+        for (DocumentFolder folder : (List<DocumentFolder>) em.createNamedQuery("DocumentFolder.findAll").getResultList()) {
+            if (this.isFolderCreator(folder)) {
+                folders.add(folder);
+            }
+        }
+        return folders;
+    }
+
+    public CrxResponse createFolder(String name, String description, Long parentFolderId) {
+        if (name == null || name.isEmpty()) {
+            return new CrxResponse("ERROR", "A folder name must be set.");
+        }
+        DocumentFolder folder = new DocumentFolder();
+        folder.setName(name);
+        folder.setDescription(description == null ? "" : description);
+        folder.setCreator(this.session.getUser());
+        if (parentFolderId != null) {
+            DocumentFolder parent = em.find(DocumentFolder.class, parentFolderId);
+            if (parent == null) {
+                return new CrxResponse("ERROR", "Parent folder was not found.");
+            }
+            if (!this.isFolderCreator(parent)) {
+                throw new WebApplicationException(403);
+            }
+            folder.setParent(parent);
+        }
+        for (DocumentFolder existing : this.getOwnFolders()) {
+            Long existingParent = existing.getParent() != null ? existing.getParent().getId() : null;
+            boolean sameParent = (parentFolderId == null && existingParent == null)
+                    || (parentFolderId != null && parentFolderId.equals(existingParent));
+            if (sameParent && existing.getName().equals(folder.getName())) {
+                return new CrxResponse("ERROR", "A folder with this name already exists in the parent folder.");
+            }
+        }
+        try {
+            em.getTransaction().begin();
+            em.persist(folder);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Folder was created successfully.", folder.getId());
+        } catch (Exception e) {
+            logger.error("createFolder: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Folder was not created: " + e.getMessage());
+        }
+    }
+
+    public List<DocumentFolder> getFolders() {
+        return this.getOwnFolders();
+    }
+
+    public DocumentFolder getFolder(Long folderId) {
+        DocumentFolder folder = em.find(DocumentFolder.class, folderId);
+        if (folder == null) {
+            throw new WebApplicationException(404);
+        }
+        if (!this.isFolderCreator(folder)) {
+            throw new WebApplicationException(403);
+        }
+        return folder;
+    }
+
+    public List<DocumentFolder> getSubFolders(Long folderId) {
+        DocumentFolder folder = this.getFolder(folderId);
+        return folder.getSubFolders();
+    }
+
+    public List<Document> getDocumentsOfFolder(Long folderId) {
+        DocumentFolder folder = this.getFolder(folderId);
+        List<Document> documents = new ArrayList<>();
+        for (Document document : folder.getDocuments()) {
+            if (this.mayRead(document)) {
+                documents.add(document);
+            }
+        }
+        return documents;
+    }
+
+    public CrxResponse patchFolder(Long folderId, DocumentFolder folder) {
+        DocumentFolder oldFolder = em.find(DocumentFolder.class, folderId);
+        if (oldFolder == null) {
+            return new CrxResponse("ERROR", "Folder was not found.");
+        }
+        if (!this.isFolderCreator(oldFolder)) {
+            throw new WebApplicationException(403);
+        }
+        if (folder.getName() != null && !folder.getName().isEmpty()) {
+            oldFolder.setName(folder.getName());
+        }
+        if (folder.getDescription() != null) {
+            oldFolder.setDescription(folder.getDescription());
+        }
+        try {
+            em.getTransaction().begin();
+            em.merge(oldFolder);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Folder was modified successfully.");
+        } catch (Exception e) {
+            logger.error("patchFolder: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Folder was not modified: " + e.getMessage());
+        }
+    }
+
+    public CrxResponse deleteFolder(Long folderId) {
+        DocumentFolder folder = em.find(DocumentFolder.class, folderId);
+        if (folder == null) {
+            return new CrxResponse("ERROR", "Folder was not found.");
+        }
+        if (!this.isFolderCreator(folder)) {
+            throw new WebApplicationException(403);
+        }
+        try {
+            em.getTransaction().begin();
+            this.deleteFolderTree(folder);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Folder was deleted successfully.");
+        } catch (Exception e) {
+            logger.error("deleteFolder: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Folder was not deleted: " + e.getMessage());
+        }
+    }
+
+    private void deleteFolderTree(DocumentFolder folder) {
+        for (DocumentFolder sub : new ArrayList<>(folder.getSubFolders())) {
+            this.deleteFolderTree(sub);
+        }
+        for (Document document : new ArrayList<>(folder.getDocuments())) {
+            this.deleteDocumentFiles(document);
+            em.remove(document);
+        }
+        em.remove(folder);
+    }
+
+    public CrxResponse moveDocument(Long documentId, Long folderId) {
+        Document document = em.find(Document.class, documentId);
+        if (document == null) {
+            return new CrxResponse("ERROR", "Document was not found.");
+        }
+        if (!this.mayWrite(document)) {
+            throw new WebApplicationException(403);
+        }
+        DocumentFolder folder = em.find(DocumentFolder.class, folderId);
+        if (folder == null) {
+            return new CrxResponse("ERROR", "Folder was not found.");
+        }
+        if (!this.isFolderCreator(folder)) {
+            throw new WebApplicationException(403);
+        }
+        try {
+            em.getTransaction().begin();
+            document.setFolder(folder);
+            em.merge(document);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Document was moved successfully.");
+        } catch (Exception e) {
+            logger.error("moveDocument: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Document was not moved: " + e.getMessage());
+        }
+    }
+
+    public CrxResponse moveToRoot(Long documentId) {
+        Document document = em.find(Document.class, documentId);
+        if (document == null) {
+            return new CrxResponse("ERROR", "Document was not found.");
+        }
+        if (!this.mayWrite(document)) {
+            throw new WebApplicationException(403);
+        }
+        try {
+            em.getTransaction().begin();
+            document.setFolder(null);
+            em.merge(document);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Document was moved to root successfully.");
+        } catch (Exception e) {
+            logger.error("moveToRoot: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Document was not moved: " + e.getMessage());
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
     /* Document management                                                 */
     /* ------------------------------------------------------------------ */
 
-    public CrxResponse add(String name, String description, String tags,
-                           List<DocumentRight> rights,
-                           InputStream fileInputStream,
-                           FormDataContentDisposition contentDispositionHeader) {
+public CrxResponse add(String name, String description, String tags, Long folderId,
+                       List<DocumentRight> rights,
+                       InputStream fileInputStream,
+                       FormDataContentDisposition contentDispositionHeader) {
         if (contentDispositionHeader == null || contentDispositionHeader.getFileName() == null
                 || contentDispositionHeader.getFileName().isEmpty()) {
             return new CrxResponse("ERROR", "A file must be uploaded.");
@@ -158,6 +361,16 @@ public class DocumentService extends Service {
         document.setName((name == null || name.isEmpty()) ? fileName : name);
         document.setDescription(description == null ? "" : description);
         document.setTags(tags == null ? "" : tags);
+        if (folderId != null) {
+            DocumentFolder folder = em.find(DocumentFolder.class, folderId);
+            if (folder == null) {
+                return new CrxResponse("ERROR", "Folder was not found.");
+            }
+            if (!this.isFolderCreator(folder)) {
+                throw new WebApplicationException(403);
+            }
+            document.setFolder(folder);
+        }
         Path versionPath = null;
         try {
             em.getTransaction().begin();
@@ -228,6 +441,12 @@ public class DocumentService extends Service {
         for (Document document : (List<Document>) em.createNamedQuery("Document.search")
                 .setParameter("search", "%" + searchTerm + "%").getResultList()) {
             if (this.mayRead(document)) {
+                if (filter != null && filter.getFolderId() != null) {
+                    if (document.getFolder() == null
+                            || !document.getFolder().getId().equals(filter.getFolderId())) {
+                        continue;
+                    }
+                }
                 documents.add(document);
             }
         }
@@ -284,19 +503,8 @@ public class DocumentService extends Service {
         if (!this.isOwnerOrSuperuser(document)) {
             throw new WebApplicationException(403);
         }
-        Path dir = this.getDocumentDir(id);
         try {
-            if (Files.exists(dir)) {
-                Files.walk(dir)
-                        .sorted(java.util.Comparator.reverseOrder())
-                        .forEach(path -> {
-                            try {
-                                Files.delete(path);
-                            } catch (IOException e) {
-                                logger.error("delete document file: " + e.getMessage());
-                            }
-                        });
-            }
+            this.deleteDocumentFiles(document);
             em.getTransaction().begin();
             em.remove(document);
             em.getTransaction().commit();
@@ -307,6 +515,26 @@ public class DocumentService extends Service {
                 em.getTransaction().rollback();
             }
             return new CrxResponse("ERROR", "Document was not deleted: " + e.getMessage());
+        }
+    }
+
+    private void deleteDocumentFiles(Document document) {
+        Path dir = this.getDocumentDir(document.getId());
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try {
+            Files.walk(dir)
+                    .sorted(java.util.Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.delete(path);
+                        } catch (IOException e) {
+                            logger.error("delete document file: " + e.getMessage());
+                        }
+                    });
+        } catch (IOException e) {
+            logger.error("delete document files: " + e.getMessage());
         }
     }
 

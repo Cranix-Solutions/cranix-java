@@ -2,6 +2,7 @@ package de.cranix.api.resources;
 
 import de.cranix.dao.CrxResponse;
 import de.cranix.dao.Document;
+import de.cranix.dao.DocumentFolder;
 import de.cranix.dao.DocumentRight;
 import de.cranix.dao.DocumentVersion;
 import de.cranix.dao.Session;
@@ -46,11 +47,12 @@ public class DocumentResource {
             @FormDataParam("name") String name,
             @FormDataParam("description") String description,
             @FormDataParam("tags") String tags,
+            @FormDataParam("folderId") Long folderId,
             @FormDataParam("file") final InputStream fileInputStream,
             @FormDataParam("file") final FormDataContentDisposition contentDispositionHeader
     ) {
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
-        CrxResponse resp = new DocumentService(session, em).add(name, description, tags, null, fileInputStream, contentDispositionHeader);
+        CrxResponse resp = new DocumentService(session, em).add(name, description, tags, folderId, null, fileInputStream, contentDispositionHeader);
         em.close();
         return resp;
     }
@@ -269,6 +271,162 @@ public class DocumentResource {
     ) {
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
         CrxResponse resp = new DocumentService(session, em).removeRight(documentId, rightId);
+        em.close();
+        return resp;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Folder management                                                   */
+    /* ------------------------------------------------------------------ */
+
+    @POST
+    @Path("folders")
+    @ApiOperation(value = "Creates a private folder. A folder is visible only to its creator. " +
+            "The name must be unique within the parent folder.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.add")
+    public CrxResponse createFolder(
+            @ApiParam(hidden = true) @Auth Session session,
+            DocumentFolder folder
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em)
+                .createFolder(folder.getName(), folder.getDescription(), folder.getParentFolderId());
+        em.close();
+        return resp;
+    }
+
+    @GET
+    @Path("folders")
+    @ApiOperation(value = "Gets all folders of the session user.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.search")
+    public List<DocumentFolder> getFolders(
+            @ApiParam(hidden = true) @Auth Session session
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        List<DocumentFolder> resp = new DocumentService(session, em).getFolders();
+        em.close();
+        return resp;
+    }
+
+    @GET
+    @Path("folders/{folderId}")
+    @ApiOperation(value = "Gets the metadata of a folder.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.search")
+    public DocumentFolder getFolder(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("folderId") Long folderId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        DocumentFolder resp = new DocumentService(session, em).getFolder(folderId);
+        em.close();
+        return resp;
+    }
+
+    @PATCH
+    @Path("folders/{folderId}")
+    @ApiOperation(value = "Modifies the metadata of a folder.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.modify")
+    public CrxResponse patchFolder(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("folderId") Long folderId,
+            DocumentFolder folder
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        folder.setId(folderId);
+        CrxResponse resp = new DocumentService(session, em).patchFolder(folderId, folder);
+        em.close();
+        return resp;
+    }
+
+    @DELETE
+    @Path("folders/{folderId}")
+    @ApiOperation(value = "Deletes a folder with all its subfolders, documents, versions and access rights.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.delete")
+    public CrxResponse deleteFolder(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("folderId") Long folderId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em).deleteFolder(folderId);
+        em.close();
+        return resp;
+    }
+
+    @GET
+    @Path("folders/{folderId}/subfolders")
+    @ApiOperation(value = "Gets the subfolders of a folder.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.search")
+    public List<DocumentFolder> getSubFolders(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("folderId") Long folderId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        List<DocumentFolder> resp = new DocumentService(session, em).getSubFolders(folderId);
+        em.close();
+        return resp;
+    }
+
+    @GET
+    @Path("folders/{folderId}/documents")
+    @ApiOperation(value = "Gets the documents of a folder the session user may read.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.search")
+    public List<Document> getDocumentsOfFolder(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("folderId") Long folderId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        List<Document> resp = new DocumentService(session, em).getDocumentsOfFolder(folderId);
+        em.close();
+        return resp;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Moving documents between folders                                    */
+    /* ------------------------------------------------------------------ */
+
+    @PUT
+    @Path("{documentId}/folder/{folderId}")
+    @ApiOperation(value = "Moves a document into a folder.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.modify")
+    public CrxResponse moveDocument(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("documentId") Long documentId,
+            @PathParam("folderId") Long folderId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em).moveDocument(documentId, folderId);
+        em.close();
+        return resp;
+    }
+
+    @DELETE
+    @Path("{documentId}/folder")
+    @ApiOperation(value = "Moves a document to the root level, i.e. removes it from its folder.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.modify")
+    public CrxResponse moveDocumentToRoot(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("documentId") Long documentId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em).moveToRoot(documentId);
         em.close();
         return resp;
     }

@@ -1,4 +1,5 @@
 package de.cranix.dao;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import javax.persistence.*;
 import javax.validation.constraints.Size;
 import java.util.ArrayList;
@@ -31,6 +32,11 @@ public class Document extends AbstractEntity {
     @Size(max=256, message="Tags must not be longer then 256 characters.")
     private String tags = "";
 
+    @ManyToOne
+    @JsonIgnore
+    @JoinColumn(name="folder_id", columnDefinition ="BIGINT UNSIGNED")
+    private DocumentFolder folder;
+
     @OneToMany(mappedBy="document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentRight> rights = new ArrayList<>();
 
@@ -58,6 +64,9 @@ public class Document extends AbstractEntity {
 
     @Transient
     private String comment;
+
+    @Transient
+    private Long folderId;
 
     public Document() {
         super();
@@ -203,5 +212,21 @@ public class Document extends AbstractEntity {
 
     public void setComment(String comment) {
         this.comment = comment;
+    }
+
+    public DocumentFolder getFolder() {
+        return folder;
+    }
+
+    public void setFolder(DocumentFolder folder) {
+        this.folder = folder;
+    }
+
+    public Long getFolderId() {
+        return this.folder != null ? this.folder.getId() : this.folderId;
+    }
+
+    public void setFolderId(Long folderId) {
+        this.folderId = folderId;
     }
 }
