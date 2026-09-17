@@ -20,6 +20,7 @@ public interface CranixConstants {
 	static String cranixConfDir    = "/opt/cranix-java/conf/";
 	static String cranixPropFile   = "/opt/cranix-java/conf/cranix-api.properties";
 	static String cranixTmpDir     = "/opt/cranix-java/tmp/";
+	static String cranixDocumentsDir = "/var/cranix/documents/";
 	static String cranixBaseDir    = "/usr/share/cranix/";
 	static String cranixPrinters   = cranixBaseDir + "templates/printers.txt";
 	static String cranixSysConfig  = "/etc/sysconfig/cranix";
