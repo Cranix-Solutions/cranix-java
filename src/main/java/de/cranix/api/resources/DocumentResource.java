@@ -14,6 +14,7 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+import org.glassfish.jersey.media.multipart.FormDataBodyPart;
 import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.glassfish.jersey.media.multipart.FormDataParam;
 
@@ -49,10 +50,12 @@ public class DocumentResource {
             @FormDataParam("tags") String tags,
             @FormDataParam("folderId") Long folderId,
             @FormDataParam("file") final InputStream fileInputStream,
-            @FormDataParam("file") final FormDataContentDisposition contentDispositionHeader
+            @FormDataParam("file") final FormDataContentDisposition contentDispositionHeader,
+            @FormDataParam("file") final FormDataBodyPart filePart
     ) {
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
-        CrxResponse resp = new DocumentService(session, em).add(name, description, tags, folderId, null, fileInputStream, contentDispositionHeader);
+        String contentType = filePart != null && filePart.getMediaType() != null ? filePart.getMediaType().toString() : null;
+        CrxResponse resp = new DocumentService(session, em).add(name, description, tags, folderId, null, contentType, fileInputStream, contentDispositionHeader);
         em.close();
         return resp;
     }
@@ -132,10 +135,12 @@ public class DocumentResource {
             @PathParam("documentId") Long documentId,
             @FormDataParam("comment") String comment,
             @FormDataParam("file") final InputStream fileInputStream,
-            @FormDataParam("file") final FormDataContentDisposition contentDispositionHeader
+            @FormDataParam("file") final FormDataContentDisposition contentDispositionHeader,
+            @FormDataParam("file") final FormDataBodyPart filePart
     ) {
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
-        CrxResponse resp = new DocumentService(session, em).addVersion(documentId, comment, fileInputStream, contentDispositionHeader);
+        String contentType = filePart != null && filePart.getMediaType() != null ? filePart.getMediaType().toString() : null;
+        CrxResponse resp = new DocumentService(session, em).addVersion(documentId, comment, contentType, fileInputStream, contentDispositionHeader);
         em.close();
         return resp;
     }

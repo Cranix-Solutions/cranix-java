@@ -12,6 +12,7 @@ import javax.ws.rs.core.Response.ResponseBuilder;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -72,9 +73,15 @@ public class DocumentService extends Service {
         return name;
     }
 
-    private String getMimeType(Path path, String contentType) {
-        if (contentType != null && !contentType.isEmpty()) {
+    private String getMimeType(Path path, String contentType, String fileName) {
+        if (contentType != null && contentType.contains("/")) {
             return contentType;
+        }
+        if (fileName != null) {
+            String type = URLConnection.guessContentTypeFromName(fileName);
+            if (type != null && !type.isEmpty()) {
+                return type;
+            }
         }
         try {
             String type = Files.probeContentType(path);
@@ -140,6 +147,11 @@ public class DocumentService extends Service {
         return this.isOwnerOrSuperuser(document) || hasRight(document, this.session.getUser(), true);
     }
 
+    private void loadLazyCollections(Document document) {
+        document.getRights().size();
+        document.getVersions().size();
+    }
+
     /* ------------------------------------------------------------------ */
     /* Folder management                                                   */
     /* ------------------------------------------------------------------ */
@@ -166,7 +178,7 @@ public class DocumentService extends Service {
         folder.setName(name);
         folder.setDescription(description == null ? "" : description);
         folder.setCreator(this.session.getUser());
-        if (parentFolderId != null) {
+        if (parentFolderId != null && parentFolderId > 0) {
             DocumentFolder parent = em.find(DocumentFolder.class, parentFolderId);
             if (parent == null) {
                 return new CrxResponse("ERROR", "Parent folder was not found.");
@@ -223,6 +235,7 @@ public class DocumentService extends Service {
         List<Document> documents = new ArrayList<>();
         for (Document document : folder.getDocuments()) {
             if (this.mayRead(document)) {
+                this.loadLazyCollections(document);
                 documents.add(document);
             }
         }
@@ -349,6 +362,7 @@ public class DocumentService extends Service {
 
 public CrxResponse add(String name, String description, String tags, Long folderId,
                        List<DocumentRight> rights,
+                       String contentType,
                        InputStream fileInputStream,
                        FormDataContentDisposition contentDispositionHeader) {
         if (contentDispositionHeader == null || contentDispositionHeader.getFileName() == null
@@ -383,7 +397,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
             version.setCreator(this.session.getUser());
             version.setVersionNumber(1);
             version.setFileName(fileName);
-            version.setMimeType(this.getMimeType(versionPath, contentDispositionHeader.getType()));
+            version.setMimeType(this.getMimeType(versionPath, contentType, fileName));
             version.setSize(Files.size(versionPath));
             version.setCheckSum(this.checkSum(versionPath));
             version.setFilePath(versionPath.toString());
@@ -420,6 +434,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
         List<Document> documents = new ArrayList<>();
         for (Document document : (List<Document>) em.createNamedQuery("Document.findAll").getResultList()) {
             if (this.mayRead(document)) {
+                this.loadLazyCollections(document);
                 documents.add(document);
             }
         }
@@ -427,6 +442,17 @@ public CrxResponse add(String name, String description, String tags, Long folder
     }
 
     public List<Document> search(Document filter) {
+        if (filter != null) {
+            if (filter.getFolderId() != null && filter.getFolderId() == 0) {
+                filter.setFolderId(null);
+            }
+            if (filter.getUserId() != null && filter.getUserId() == 0) {
+                filter.setUserId(null);
+            }
+            if (filter.getGroupId() != null && filter.getGroupId() == 0) {
+                filter.setGroupId(null);
+            }
+        }
         String searchTerm = "";
         if (filter != null) {
             if (filter.getName() != null && !filter.getName().isEmpty()) {
@@ -437,20 +463,52 @@ public CrxResponse add(String name, String description, String tags, Long folder
                 searchTerm = filter.getDescription();
             }
         }
+        List<Long> groupIds = new ArrayList<>();
+        if (filter != null && filter.getUserId() != null) {
+            User user = em.find(User.class, filter.getUserId());
+            if (user != null) {
+                for (Group group : user.getGroups()) {
+                    groupIds.add(group.getId());
+                }
+            }
+        }
+        logger.debug("searchTerm: " + searchTerm);
         List<Document> documents = new ArrayList<>();
         for (Document document : (List<Document>) em.createNamedQuery("Document.search")
                 .setParameter("search", "%" + searchTerm + "%").getResultList()) {
+            logger.debug("Document: " + document.getName());
             if (this.mayRead(document)) {
                 if (filter != null && filter.getFolderId() != null) {
                     if (document.getFolder() == null
                             || !document.getFolder().getId().equals(filter.getFolderId())) {
+			    logger.debug("Not in folder" + document.getFolder().getId() + " " + filter.getFolderId());
                         continue;
                     }
                 }
+                if (filter != null && (filter.getUserId() != null || filter.getGroupId() != null)) {
+                    if (!this.hasRightForTarget(document, filter.getUserId(), filter.getGroupId(), groupIds)) {
+                        logger.debug("Has no right");
+                        continue;
+                    }
+                }
+                this.loadLazyCollections(document);
                 documents.add(document);
             }
         }
         return documents;
+    }
+
+    private boolean hasRightForTarget(Document document, Long userId, Long groupId, List<Long> groupIds) {
+        for (DocumentRight right : document.getRights()) {
+            if (right.getUserId() != null && right.getUserId().equals(userId)) {
+                return true;
+            }
+            if (right.getGroupId() != null
+                    && (right.getGroupId().equals(groupId) || groupIds.contains(right.getGroupId()))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public Document getById(Long id) {
@@ -461,6 +519,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
         if (!this.mayRead(document)) {
             throw new WebApplicationException(403);
         }
+        this.loadLazyCollections(document);
         return document;
     }
 
@@ -583,9 +642,10 @@ public CrxResponse add(String name, String description, String tags, Long folder
         return this.buildContentResponse(version);
     }
 
-    public CrxResponse addVersion(Long id, String comment,
-                                  InputStream fileInputStream,
-                                  FormDataContentDisposition contentDispositionHeader) {
+public CrxResponse addVersion(Long id, String comment,
+                              String contentType,
+                              InputStream fileInputStream,
+                              FormDataContentDisposition contentDispositionHeader) {
         if (contentDispositionHeader == null || contentDispositionHeader.getFileName() == null
                 || contentDispositionHeader.getFileName().isEmpty()) {
             return new CrxResponse("ERROR", "A file must be uploaded.");
@@ -624,7 +684,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
             newVersion.setCreator(this.session.getUser());
             newVersion.setVersionNumber(versionNumber);
             newVersion.setFileName(fileName);
-            newVersion.setMimeType(this.getMimeType(versionPath, contentDispositionHeader.getType()));
+            newVersion.setMimeType(this.getMimeType(versionPath, contentType, fileName));
             newVersion.setSize(Files.size(versionPath));
             newVersion.setCheckSum(this.checkSum(versionPath));
             newVersion.setFilePath(versionPath.toString());
@@ -690,8 +750,8 @@ public CrxResponse add(String name, String description, String tags, Long folder
             throw new WebApplicationException(404);
         }
         String mimeType = version.getMimeType();
-        if (mimeType == null || mimeType.isEmpty()) {
-            mimeType = this.getMimeType(file.toPath(), null);
+        if (mimeType == null || mimeType.isEmpty() || !mimeType.contains("/")) {
+            mimeType = this.getMimeType(file.toPath(), null, version.getFileName());
         }
         ResponseBuilder response = Response.ok((Object) file)
                 .header("Content-Disposition", "attachment; filename=\"" + version.getFileName() + "\"")
@@ -784,6 +844,12 @@ public CrxResponse add(String name, String description, String tags, Long folder
      * @return null if the right could be resolved, otherwise an error response.
      */
     private CrxResponse resolveRight(Document document, DocumentRight right) {
+        if (right.getUserId() != null && right.getUserId() == 0) {
+            right.setUserId(null);
+        }
+        if (right.getGroupId() != null && right.getGroupId() == 0) {
+            right.setGroupId(null);
+        }
         if (right.getUserId() != null && right.getGroupId() != null) {
             return new CrxResponse("ERROR", "Either a user or a group must be set, not both.");
         }

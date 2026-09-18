@@ -41,6 +41,7 @@ public class Document extends AbstractEntity {
     private List<DocumentRight> rights = new ArrayList<>();
 
     @OneToMany(mappedBy="document", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
     private List<DocumentVersion> versions = new ArrayList<>();
 
     /*
@@ -67,6 +68,12 @@ public class Document extends AbstractEntity {
 
     @Transient
     private Long folderId;
+
+    @Transient
+    private Long userId;
+
+    @Transient
+    private Long groupId;
 
     public Document() {
         super();
@@ -228,5 +235,21 @@ public class Document extends AbstractEntity {
 
     public void setFolderId(Long folderId) {
         this.folderId = folderId;
+    }
+
+    public Long getUserId() {
+        return this.userId;
+    }
+
+    public void setUserId(Long userId) {
+        this.userId = userId;
+    }
+
+    public Long getGroupId() {
+        return this.groupId;
+    }
+
+    public void setGroupId(Long groupId) {
+        this.groupId = groupId;
     }
 }
