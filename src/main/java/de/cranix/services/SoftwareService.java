@@ -165,12 +165,6 @@
          }
          //This is an new software
          software.setCreator(this.session.getUser());
-         if (software.getSoftwareVersions() != null && software.getSoftwareVersions().size() > 0) {
-             software.getSoftwareVersions().get(0).setSoftware(software);
-         }
-         if (software.getSoftwareFullNames() != null && software.getSoftwareFullNames().size() > 0) {
-             software.getSoftwareFullNames().get(0).setSoftware(software);
-         }
          try {
              this.em.getTransaction().begin();
              this.em.persist(software);
