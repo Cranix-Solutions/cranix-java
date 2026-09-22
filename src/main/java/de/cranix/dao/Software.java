@@ -7,6 +7,7 @@ import javax.validation.constraints.Size;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -44,13 +45,15 @@ public class Software extends AbstractEntity {
 
     /* bi-directional many-to-one associations */
     @OneToMany(mappedBy = "software")
-    @JsonIgnore
+    @JsonManagedReference
     private List<SoftwareLicense> softwareLicenses;
 
     @OneToMany(mappedBy = "software", cascade = CascadeType.ALL)
+    @JsonManagedReference
     private List<SoftwareVersion> softwareVersions;
 
     @OneToMany(mappedBy = "software", cascade = CascadeType.ALL)
+    @JsonManagedReference
     private List<SoftwareFullName> softwareFullNames;
 
     @ManyToMany()

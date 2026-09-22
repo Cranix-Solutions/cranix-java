@@ -6,6 +6,7 @@ import javax.persistence.*;
 import javax.validation.constraints.Size;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonBackReference;
 
 import java.util.List;
 
@@ -31,7 +32,7 @@ public class SoftwareVersion extends AbstractEntity {
 
 	//bi-directional many-to-one association to Software
 	@ManyToOne
-	@JsonIgnore
+	@JsonBackReference
 	@JoinColumn(name="software_id", columnDefinition ="BIGINT UNSIGNED NOT NULL")
 	private Software software;
 	
