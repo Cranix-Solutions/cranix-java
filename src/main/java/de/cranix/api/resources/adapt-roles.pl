@@ -10,7 +10,8 @@ my @ROLES_TO_DELETE = ('education.groups', 'education.guestusers', 'education.ro
 my $hroles = {};
 my $forTeachers = {};
 $forTeachers->{'calendar.use'} = 1;
-my @forStudents = ('calendar.read', 'room.search', 'group.search' );
+$forTeachers->{'crxnote.use'} = 1;
+my @forStudents = ('calendar.read', 'room.search', 'group.search', 'documents.search', 'documents.modify' );
 
 my @ROLES = ($text =~ /"(.+?)"/gs);
 foreach( @ROLES )
