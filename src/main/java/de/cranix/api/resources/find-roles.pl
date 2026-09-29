@@ -41,6 +41,10 @@ foreach( sort keys %$forTeachers )
 {
 	print "INSERT INTO Acls SET group_id=2,acl='$_',allowed='Y';\n";
 }
+foreach( sort @forStudents )
+{
+	print "INSERT INTO Acls SET group_id=3,acl='$_',allowed='Y';\n";
+}
 
 foreach( @USERROLES ) {
 	print "INSERT INTO Enumerates SET name='apiAcl',value='user.add.$_';\n";
