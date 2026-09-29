@@ -76,6 +76,9 @@ public class CranixApplication extends Application<ServerConfiguration> {
 		final DeviceResource devicesResource = new DeviceResource();
 		environment.jersey().register(devicesResource);
 
+		final DocumentResource documentResource = new DocumentResource();
+		environment.jersey().register(documentResource);
+
 		final EducationResource educationResource = new EducationResource();
 		environment.jersey().register(educationResource);
 
