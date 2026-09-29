@@ -9,7 +9,7 @@ my @GROUPTYPES = ( 'primary', 'class', 'workgroup', 'guests' );
 my $hroles = {};
 my $forTeachers = {};
 $forTeachers->{'calendar.use'} = 1;
-my @forStudents = ('calendar.read', 'room.search', 'group.search' );
+my @forStudents = ('calendar.read', 'room.search', 'group.search', 'documents.search', 'documents.modify' );
 
 
 foreach( split /\n/, $ROLES )
@@ -21,7 +21,7 @@ foreach( split /\n/, $ROLES )
 		}
 		my $r = $1;
 		$hroles->{$1} = 1;
-		if( $r =~ /education/  || $r =~ /information/ || $r =~ /.search/ ) {
+		if( $r =~ /education/  || $r =~ /information/ || $r =~ /.search/ || $r =~ /documents/ ) {
 			next if( $r =~ /softwares*/ );
 			$forTeachers->{$r} = 1;
 		}
