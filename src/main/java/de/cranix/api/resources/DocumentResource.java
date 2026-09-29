@@ -49,13 +49,14 @@ public class DocumentResource {
             @FormDataParam("description") String description,
             @FormDataParam("tags") String tags,
             @FormDataParam("folderId") Long folderId,
+            @FormDataParam("isVersionProtected") Boolean isVersionProtected,
             @FormDataParam("file") final InputStream fileInputStream,
             @FormDataParam("file") final FormDataContentDisposition contentDispositionHeader,
             @FormDataParam("file") final FormDataBodyPart filePart
     ) {
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
         String contentType = filePart != null && filePart.getMediaType() != null ? filePart.getMediaType().toString() : null;
-        CrxResponse resp = new DocumentService(session, em).add(name, description, tags, folderId, null, contentType, fileInputStream, contentDispositionHeader);
+        CrxResponse resp = new DocumentService(session, em).add(name, description, tags, folderId, isVersionProtected, null, contentType, fileInputStream, contentDispositionHeader);
         em.close();
         return resp;
     }
@@ -174,6 +175,24 @@ public class DocumentResource {
     ) {
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
         Response resp = new DocumentService(session, em).getVersionContent(documentId, versionNumber);
+        em.close();
+        return resp;
+    }
+
+    @DELETE
+    @Path("{documentId}/versions/{versionNumber}")
+    @ApiOperation(value = "Deletes a specific version of the document. If the deleted version was the current one, " +
+            "the remaining version with the highest version number becomes the current one.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.modify")
+    public CrxResponse deleteVersion(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("documentId") Long documentId,
+            @PathParam("versionNumber") Integer versionNumber
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em).deleteVersion(documentId, versionNumber);
         em.close();
         return resp;
     }
