@@ -32,6 +32,10 @@ public class Document extends AbstractEntity {
     @Size(max=256, message="Tags must not be longer then 256 characters.")
     private String tags = "";
 
+    @Convert(converter=BooleanToStringConverter.class)
+    @Column(name = "isVersionProtected", columnDefinition = "CHAR(1) DEFAULT 'N'")
+    private Boolean isVersionProtected = false;
+
     @ManyToOne
     @JsonIgnore
     @JoinColumn(name="folder_id", columnDefinition ="BIGINT UNSIGNED")
@@ -105,6 +109,14 @@ public class Document extends AbstractEntity {
 
     public void setTags(String tags) {
         this.tags = tags;
+    }
+
+    public Boolean getIsVersionProtected() {
+        return isVersionProtected;
+    }
+
+    public void setIsVersionProtected(Boolean isVersionProtected) {
+        this.isVersionProtected = isVersionProtected;
     }
 
     public List<DocumentRight> getRights() {

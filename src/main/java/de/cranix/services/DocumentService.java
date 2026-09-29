@@ -361,6 +361,7 @@ public class DocumentService extends Service {
     /* ------------------------------------------------------------------ */
 
 public CrxResponse add(String name, String description, String tags, Long folderId,
+                       Boolean isVersionProtected,
                        List<DocumentRight> rights,
                        String contentType,
                        InputStream fileInputStream,
@@ -375,6 +376,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
         document.setName((name == null || name.isEmpty()) ? fileName : name);
         document.setDescription(description == null ? "" : description);
         document.setTags(tags == null ? "" : tags);
+        document.setIsVersionProtected(Boolean.TRUE.equals(isVersionProtected));
         if (folderId != null) {
             DocumentFolder folder = em.find(DocumentFolder.class, folderId);
             if (folder == null) {
@@ -540,6 +542,9 @@ public CrxResponse add(String name, String description, String tags, Long folder
         if (document.getTags() != null) {
             oldDocument.setTags(document.getTags());
         }
+        if (document.getIsVersionProtected() != null && this.isOwnerOrSuperuser(oldDocument)) {
+            oldDocument.setIsVersionProtected(document.getIsVersionProtected());
+        }
         try {
             em.getTransaction().begin();
             em.merge(oldDocument);
@@ -624,7 +629,15 @@ public CrxResponse add(String name, String description, String tags, Long folder
         if (!this.mayRead(document)) {
             throw new WebApplicationException(403);
         }
-        return document.getVersions();
+        boolean seeAll = !Boolean.TRUE.equals(document.getIsVersionProtected())
+                || this.session.getUser().equals(document.getCreator());
+        List<DocumentVersion> result = new ArrayList<>();
+        for (DocumentVersion version : document.getVersions()) {
+            if (seeAll || this.session.getUser().equals(version.getCreator())) {
+                result.add(version);
+            }
+        }
+        return result;
     }
 
     public Response getVersionContent(Long id, int versionNumber) {
@@ -638,6 +651,11 @@ public CrxResponse add(String name, String description, String tags, Long folder
         DocumentVersion version = this.getVersion(document, versionNumber);
         if (version == null) {
             throw new WebApplicationException(404);
+        }
+        boolean seeAll = !Boolean.TRUE.equals(document.getIsVersionProtected())
+                || this.session.getUser().equals(document.getCreator());
+        if (!seeAll && !this.session.getUser().equals(version.getCreator())) {
+            throw new WebApplicationException(403);
         }
         return this.buildContentResponse(version);
     }
@@ -675,9 +693,13 @@ public CrxResponse addVersion(Long id, String comment,
         }
         try {
             em.getTransaction().begin();
-            for (DocumentVersion version : document.getVersions()) {
-                if (Boolean.TRUE.equals(version.getIsCurrent())) {
-                    version.setIsCurrent(false);
+            boolean becomesCurrent = !Boolean.TRUE.equals(document.getIsVersionProtected())
+                    || this.session.getUser().equals(document.getCreator());
+            if (becomesCurrent) {
+                for (DocumentVersion version : document.getVersions()) {
+                    if (Boolean.TRUE.equals(version.getIsCurrent())) {
+                        version.setIsCurrent(false);
+                    }
                 }
             }
             DocumentVersion newVersion = new DocumentVersion();
@@ -689,7 +711,7 @@ public CrxResponse addVersion(Long id, String comment,
             newVersion.setCheckSum(this.checkSum(versionPath));
             newVersion.setFilePath(versionPath.toString());
             newVersion.setComment(comment == null ? "" : comment);
-            newVersion.setIsCurrent(true);
+            newVersion.setIsCurrent(becomesCurrent);
             document.addVersion(newVersion);
             em.getTransaction().commit();
             return new CrxResponse("OK", "New version %d was created successfully.", newVersion.getId());
@@ -712,7 +734,11 @@ public CrxResponse addVersion(Long id, String comment,
         if (document == null) {
             throw new WebApplicationException(404);
         }
-        if (!this.mayWrite(document)) {
+        if (Boolean.TRUE.equals(document.getIsVersionProtected())) {
+            if (!this.session.getUser().equals(document.getCreator())) {
+                throw new WebApplicationException(403);
+            }
+        } else if (!this.mayWrite(document)) {
             throw new WebApplicationException(403);
         }
         DocumentVersion target = this.getVersion(document, versionNumber);
@@ -733,6 +759,57 @@ public CrxResponse addVersion(Long id, String comment,
             }
             return new CrxResponse("ERROR", "Version was not restored: " + e.getMessage());
         }
+    }
+
+    public CrxResponse deleteVersion(Long id, int versionNumber) {
+        Document document = em.find(Document.class, id);
+        if (document == null) {
+            throw new WebApplicationException(404);
+        }
+        DocumentVersion version = this.getVersion(document, versionNumber);
+        if (version == null) {
+            throw new WebApplicationException(404);
+        }
+        if (!this.isOwnerOrSuperuser(document)
+                && !this.session.getUser().equals(version.getCreator())) {
+            throw new WebApplicationException(403);
+        }
+        if (document.getVersions().size() <= 1) {
+            return new CrxResponse("ERROR", "The last version of a document cannot be deleted.");
+        }
+        boolean wasCurrent = Boolean.TRUE.equals(version.getIsCurrent());
+        DocumentVersion newCurrent = null;
+        if (wasCurrent) {
+            for (DocumentVersion remaining : document.getVersions()) {
+                if (remaining.getVersionNumber() != versionNumber
+                        && (newCurrent == null || remaining.getVersionNumber() > newCurrent.getVersionNumber())) {
+                    newCurrent = remaining;
+                }
+            }
+        }
+        try {
+            em.getTransaction().begin();
+            if (newCurrent != null) {
+                newCurrent.setIsCurrent(true);
+                em.merge(newCurrent);
+            }
+            document.removeVersion(version);
+            em.remove(version);
+            em.merge(document);
+            em.getTransaction().commit();
+        } catch (Exception e) {
+            logger.error("deleteVersion: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Version was not deleted: " + e.getMessage());
+        }
+        try {
+            Files.deleteIfExists(Paths.get(version.getFilePath()));
+        } catch (IOException e) {
+            logger.error("deleteVersion file: " + e.getMessage());
+        }
+        return new CrxResponse("OK", "Version %d was deleted successfully.", (long) versionNumber);
     }
 
     private DocumentVersion getVersion(Document document, int versionNumber) {
