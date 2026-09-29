@@ -3,7 +3,6 @@ REPO=~/OSC/home:pvarkoly:CRANIX/cranix-java
 HERE=$( pwd )
 export JAVA_HOME="/usr/lib64/jvm/java-21-openjdk-21/"
 export JAVA_BINDIR="/usr/lib64/jvm/java-21-openjdk-21//bin/"
-mvn clean package install
 mvn package install
 
 if [ "$1" ]; then

@@ -94,6 +94,9 @@ public class CranixApplication extends Application<ServerConfiguration> {
         final CrxNoteResource crxNoteResource = new CrxNoteResource();
         environment.jersey().register(crxNoteResource);
 
+        final DocumentResource documentResource = new DocumentResource();
+        environment.jersey().register(documentResource);
+
         final DeviceResource devicesResource = new DeviceResource();
         environment.jersey().register(devicesResource);
 
