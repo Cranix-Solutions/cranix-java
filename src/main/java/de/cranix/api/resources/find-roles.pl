@@ -8,6 +8,7 @@ my @GROUPTYPES = ( 'primary', 'class', 'workgroup', 'guests' );
 
 my $hroles = {};
 my $forTeachers = {};
+$forTeachers->{'crxnote.use'} = 1;
 $forTeachers->{'calendar.use'} = 1;
 my @forStudents = ('calendar.read', 'room.search', 'group.search', 'documents.search', 'documents.modify' );
 
@@ -41,7 +42,7 @@ foreach( sort keys %$forTeachers )
 {
 	print "INSERT INTO Acls SET group_id=2,acl='$_',allowed='Y';\n";
 }
-foreach( sort keys @forStudents )
+foreach( sort @forStudents )
 {
 	print "INSERT INTO Acls SET group_id=3,acl='$_',allowed='Y';\n";
 }
