@@ -98,10 +98,10 @@ public class SessionsResource {
 			throw new WebApplicationException(401);
 		}
 		Date now = new Date();
-		if(now.before(session.getValidFrom())){
+		if(session.getValidFrom() != null && now.before(session.getValidFrom())){
 			throw new WebApplicationException(402);
 		}
-		if(now.after(session.getValidUntil())){
+		if(session.getValidUntil() != null && now.after(session.getValidUntil())){
 			throw new WebApplicationException(403);
 		}
 		em.close();
