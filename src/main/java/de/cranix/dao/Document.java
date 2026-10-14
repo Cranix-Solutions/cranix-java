@@ -83,6 +83,14 @@ public class Document extends AbstractEntity {
     @Transient
     private Long groupId;
 
+    /*
+     * True if the session user may write this document (owner, superuser or
+     * holder of a write right). Used by the client to decide if the document
+     * may be locked.
+     */
+    @Transient
+    private Boolean mayWrite = false;
+
     public Document() {
         super();
     }
@@ -255,6 +263,14 @@ public class Document extends AbstractEntity {
 
     public boolean isLocked() {
         return this.lockedBy != null;
+    }
+
+    public Boolean getMayWrite() {
+        return mayWrite;
+    }
+
+    public void setMayWrite(Boolean mayWrite) {
+        this.mayWrite = mayWrite;
     }
 
     public Long getFolderId() {

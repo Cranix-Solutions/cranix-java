@@ -247,6 +247,7 @@ public class DocumentService extends Service {
         for (Document document : folder.getDocuments()) {
             if (this.mayRead(document)) {
                 this.loadLazyCollections(document);
+                document.setMayWrite(this.mayWrite(document));
                 documents.add(document);
             }
         }
@@ -454,6 +455,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
         for (Document document : (List<Document>) em.createNamedQuery("Document.findAll").getResultList()) {
             if (this.mayRead(document)) {
                 this.loadLazyCollections(document);
+                document.setMayWrite(this.mayWrite(document));
                 documents.add(document);
             }
         }
@@ -511,6 +513,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
                     }
                 }
                 this.loadLazyCollections(document);
+                document.setMayWrite(this.mayWrite(document));
                 documents.add(document);
             }
         }
@@ -539,6 +542,7 @@ public CrxResponse add(String name, String description, String tags, Long folder
             throw new WebApplicationException(403);
         }
         this.loadLazyCollections(document);
+        document.setMayWrite(this.mayWrite(document));
         return document;
     }
 
