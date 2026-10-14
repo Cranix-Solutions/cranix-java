@@ -147,6 +147,17 @@ public class DocumentService extends Service {
         return this.isOwnerOrSuperuser(document) || hasRight(document, this.session.getUser(), true);
     }
 
+    /**
+     * A document is exclusively locked by one user. As long as another user
+     * holds the lock, this user may not modify the document at all.
+     *
+     * @param document the document to check
+     * @return true if the document is locked by another user.
+     */
+    private boolean isLockedByOther(Document document) {
+        return document.getLockedBy() != null && !document.getLockedBy().equals(this.session.getUser());
+    }
+
     private void loadLazyCollections(Document document) {
         document.getRights().size();
         document.getVersions().size();
@@ -311,6 +322,9 @@ public class DocumentService extends Service {
         if (!this.mayWrite(document)) {
             throw new WebApplicationException(403);
         }
+        if (this.isLockedByOther(document)) {
+            throw new WebApplicationException(403);
+        }
         DocumentFolder folder = em.find(DocumentFolder.class, folderId);
         if (folder == null) {
             return new CrxResponse("ERROR", "Folder was not found.");
@@ -339,6 +353,9 @@ public class DocumentService extends Service {
             return new CrxResponse("ERROR", "Document was not found.");
         }
         if (!this.mayWrite(document)) {
+            throw new WebApplicationException(403);
+        }
+        if (this.isLockedByOther(document)) {
             throw new WebApplicationException(403);
         }
         try {
@@ -533,6 +550,9 @@ public CrxResponse add(String name, String description, String tags, Long folder
         if (!this.mayWrite(oldDocument)) {
             throw new WebApplicationException(403);
         }
+        if (this.isLockedByOther(oldDocument)) {
+            throw new WebApplicationException(403);
+        }
         if (document.getName() != null && !document.getName().isEmpty()) {
             oldDocument.setName(document.getName());
         }
@@ -544,6 +564,9 @@ public CrxResponse add(String name, String description, String tags, Long folder
         }
         if (document.getIsVersionProtected() != null && this.isOwnerOrSuperuser(oldDocument)) {
             oldDocument.setIsVersionProtected(document.getIsVersionProtected());
+            if (Boolean.TRUE.equals(oldDocument.getIsVersionProtected())) {
+                oldDocument.setLockedBy(null);
+            }
         }
         try {
             em.getTransaction().begin();
@@ -565,6 +588,9 @@ public CrxResponse add(String name, String description, String tags, Long folder
             return new CrxResponse("ERROR", "Document was not found.");
         }
         if (!this.isOwnerOrSuperuser(document)) {
+            throw new WebApplicationException(403);
+        }
+        if (this.isLockedByOther(document)) {
             throw new WebApplicationException(403);
         }
         try {
@@ -599,6 +625,69 @@ public CrxResponse add(String name, String description, String tags, Long folder
                     });
         } catch (IOException e) {
             logger.error("delete document files: " + e.getMessage());
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Locking                                                             */
+    /* ------------------------------------------------------------------ */
+
+    public CrxResponse lock(Long id) {
+        Document document = em.find(Document.class, id);
+        if (document == null) {
+            throw new WebApplicationException(404);
+        }
+        if (Boolean.TRUE.equals(document.getIsVersionProtected())) {
+            return new CrxResponse("ERROR", "A version protected document cannot be locked.");
+        }
+        if (!this.mayWrite(document)) {
+            throw new WebApplicationException(403);
+        }
+        if (document.getLockedBy() != null) {
+            if (document.getLockedBy().equals(this.session.getUser())) {
+                return new CrxResponse("OK", "Document is already locked by you.");
+            }
+            return new CrxResponse("ERROR", "Document is already locked by "
+                    + document.getLockedBy().getFullName() + ".");
+        }
+        try {
+            em.getTransaction().begin();
+            document.setLockedBy(this.session.getUser());
+            em.merge(document);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Document was locked successfully.");
+        } catch (Exception e) {
+            logger.error("lock document: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Document was not locked: " + e.getMessage());
+        }
+    }
+
+    public CrxResponse unlock(Long id) {
+        Document document = em.find(Document.class, id);
+        if (document == null) {
+            throw new WebApplicationException(404);
+        }
+        if (document.getLockedBy() == null) {
+            return new CrxResponse("OK", "Document is not locked.");
+        }
+        if (!this.isOwnerOrSuperuser(document) && !document.getLockedBy().equals(this.session.getUser())) {
+            throw new WebApplicationException(403);
+        }
+        try {
+            em.getTransaction().begin();
+            document.setLockedBy(null);
+            em.merge(document);
+            em.getTransaction().commit();
+            return new CrxResponse("OK", "Document was unlocked successfully.");
+        } catch (Exception e) {
+            logger.error("unlock document: " + e.getMessage());
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            return new CrxResponse("ERROR", "Document was not unlocked: " + e.getMessage());
         }
     }
 
@@ -672,7 +761,11 @@ public CrxResponse addVersion(Long id, String comment,
         if (document == null) {
             throw new WebApplicationException(404);
         }
-        if (!this.mayWrite(document)) {
+        if (document.getLockedBy() != null) {
+            if (!document.getLockedBy().equals(this.session.getUser())) {
+                throw new WebApplicationException(403);
+            }
+        } else if (!this.mayWrite(document)) {
             throw new WebApplicationException(403);
         }
         String fileName = this.sanitizeFileName(contentDispositionHeader.getFileName());
@@ -741,6 +834,9 @@ public CrxResponse addVersion(Long id, String comment,
         } else if (!this.mayWrite(document)) {
             throw new WebApplicationException(403);
         }
+        if (this.isLockedByOther(document)) {
+            throw new WebApplicationException(403);
+        }
         DocumentVersion target = this.getVersion(document, versionNumber);
         if (target == null) {
             throw new WebApplicationException(404);
@@ -772,6 +868,9 @@ public CrxResponse addVersion(Long id, String comment,
         }
         if (!this.isOwnerOrSuperuser(document)
                 && !this.session.getUser().equals(version.getCreator())) {
+            throw new WebApplicationException(403);
+        }
+        if (this.isLockedByOther(document)) {
             throw new WebApplicationException(403);
         }
         if (document.getVersions().size() <= 1) {

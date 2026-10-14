@@ -248,6 +248,40 @@ public class DocumentResource {
         return resp;
     }
 
+    @PUT
+    @Path("{documentId}/lock")
+    @ApiOperation(value = "Locks a document for exclusive editing. Only one user may hold the lock. " +
+            "While a document is locked only the user who locked it may upload a new version or modify, " +
+            "move, restore or delete the document or its versions.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.modify")
+    public CrxResponse lock(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("documentId") Long documentId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em).lock(documentId);
+        em.close();
+        return resp;
+    }
+
+    @DELETE
+    @Path("{documentId}/lock")
+    @ApiOperation(value = "Unlocks a document. Only the owner or the user who locked the document may unlock it.")
+    @ApiResponses(value = {
+            @ApiResponse(code = 500, message = "Server broken, please contact administrator")})
+    @RolesAllowed("documents.modify")
+    public CrxResponse unlock(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("documentId") Long documentId
+    ) {
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxResponse resp = new DocumentService(session, em).unlock(documentId);
+        em.close();
+        return resp;
+    }
+
     @GET
     @Path("{documentId}/rights")
     @ApiOperation(value = "Gets the access rights of a document.")

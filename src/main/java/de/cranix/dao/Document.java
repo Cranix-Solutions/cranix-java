@@ -41,6 +41,10 @@ public class Document extends AbstractEntity {
     @JoinColumn(name="folder_id", columnDefinition ="BIGINT UNSIGNED")
     private DocumentFolder folder;
 
+    @ManyToOne
+    @JoinColumn(name="lockedBy_id", columnDefinition ="BIGINT UNSIGNED")
+    private User lockedBy;
+
     @OneToMany(mappedBy="document", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<DocumentRight> rights = new ArrayList<>();
 
@@ -239,6 +243,18 @@ public class Document extends AbstractEntity {
 
     public void setFolder(DocumentFolder folder) {
         this.folder = folder;
+    }
+
+    public User getLockedBy() {
+        return lockedBy;
+    }
+
+    public void setLockedBy(User lockedBy) {
+        this.lockedBy = lockedBy;
+    }
+
+    public boolean isLocked() {
+        return this.lockedBy != null;
     }
 
     public Long getFolderId() {
