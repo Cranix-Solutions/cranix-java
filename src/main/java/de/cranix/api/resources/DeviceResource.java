@@ -64,7 +64,7 @@ public class DeviceResource {
 	@ApiResponses(value = {
 			@ApiResponse(code = 500, message = "Server broken, please contact administrator")
 	})
-	@RolesAllowed({"device.search","device.manage"})
+	@RolesAllowed({"device.search","device.manage","crxticket.use","crxticket.worker","crxticket.manager"})
 	public List<Device> getAll(
 			@ApiParam(hidden = true) @Auth Session session
 	) {

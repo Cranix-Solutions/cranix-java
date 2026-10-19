@@ -13,12 +13,15 @@ import java.util.List;
 })
 public class CrxTicket extends AbstractEntity {
 
-    @ManyToOne(optional = false)
+    @ManyToOne(optional = true)
     @JoinColumn(
             name="assignee_id",
             columnDefinition ="BIGINT UNSIGNED"
     )
     User assignee;
+
+    @Transient
+    Long assigneeId;
 
     @Column(name="title", length = 255)
     private String title = "";
@@ -37,7 +40,7 @@ public class CrxTicket extends AbstractEntity {
     @JsonIgnore
     private List<CrxTicketArticle> crxTicketArticleList = new ArrayList<>();
 
-    @ManyToMany
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name="RoomToTicket",
             joinColumns={@JoinColumn(name="crxticket_id", columnDefinition ="BIGINT UNSIGNED NOT NULL")},
@@ -45,7 +48,7 @@ public class CrxTicket extends AbstractEntity {
     )
     List<Room> rooms = new ArrayList<>();
 
-    @ManyToMany
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name="DeviceToTicket",
             joinColumns={@JoinColumn(name="crxticket_id", columnDefinition ="BIGINT UNSIGNED NOT NULL")},
@@ -53,7 +56,7 @@ public class CrxTicket extends AbstractEntity {
     )
     List<Device> devices = new ArrayList<>();
 
-    @ManyToMany
+    @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(
             name="PrinterToTicket",
             joinColumns={@JoinColumn(name="crxticket_id", columnDefinition ="BIGINT UNSIGNED NOT NULL")},
@@ -63,6 +66,12 @@ public class CrxTicket extends AbstractEntity {
 
     @Transient
     String text = "";
+
+    @Transient
+    String attachment = "";
+
+    @Transient
+    String attachmentName = "";
 
     public CrxTicket() {
         super();
@@ -78,6 +87,17 @@ public class CrxTicket extends AbstractEntity {
 
     public void setAssignee(User assignee) {
         this.assignee = assignee;
+    }
+
+    public Long getAssigneeId() {
+        if(this.assigneeId == null) {
+            return this.assignee != null ? this.assignee.getId() : null;
+        }
+        return assigneeId;
+    }
+
+    public void setAssigneeId(Long assigneeId) {
+        this.assigneeId = assigneeId;
     }
 
     public String getTitle() {
@@ -148,5 +168,21 @@ public class CrxTicket extends AbstractEntity {
 
     public void setText(String text) {
         this.text = text;
+    }
+
+    public String getAttachment() {
+        return attachment;
+    }
+
+    public void setAttachment(String attachment) {
+        this.attachment = attachment;
+    }
+
+    public String getAttachmentName() {
+        return attachmentName;
+    }
+
+    public void setAttachmentName(String attachmentName) {
+        this.attachmentName = attachmentName;
     }
 }

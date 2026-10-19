@@ -10,12 +10,13 @@ import javax.annotation.security.RolesAllowed;
 import javax.persistence.EntityManager;
 import javax.ws.rs.*;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static de.cranix.api.resources.Resource.JSON_UTF8;
 
-@Path("crxTickets")
-@Api(value = "crxTickets")
+@Path("crxtickets")
+@Api(value = "crxtickets")
 @Produces(JSON_UTF8)
 public class CrxTicketResource {
 
@@ -71,9 +72,49 @@ public class CrxTicketResource {
             @PathParam("id") Long id
     ){
         EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
-        CrxTicket ticket = new CrxTicketService(session, em).getById(id);
+        CrxTicketService service = new CrxTicketService(session, em);
+        CrxTicket ticket = service.getById(id);
+        List<CrxTicketArticle> articles = new ArrayList<>();
+        if (service.canAccess(ticket)) {
+            articles.addAll(ticket.getCrxTicketArticleList());
+        }
         em.close();
-        return ticket.getCrxTicketArticleList();
+        return articles;
+    }
+
+    @GET
+    @ApiOperation(value = "Gets a ticket by id")
+    @Path("{id}/ticket")
+    @RolesAllowed({"crxticket.worker","crxticket.use","crxticket.manager"})
+    public CrxTicket getTicket(
+            @ApiParam(hidden = true) @Auth Session session,
+            @PathParam("id") Long id
+    ){
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        CrxTicketService service = new CrxTicketService(session, em);
+        CrxTicket ticket = service.getById(id);
+        if (!service.canAccess(ticket)) {
+            ticket = null;
+        }
+        em.close();
+        return ticket;
+    }
+
+    @GET
+    @ApiOperation(value = "Gets all tickets the session user is allowed to see in the states represented by the string status.")
+    @Path("all")
+    @RolesAllowed({"crxticket.worker","crxticket.manager"})
+    public List<CrxTicket> getAllTickets(
+            @ApiParam(hidden = true) @Auth Session session,
+            @QueryParam("status") String status
+    ){
+        if (status == null || status.isEmpty()) {
+            status = "NWRD";
+        }
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        List<CrxTicket> response = new CrxTicketService(session, em).getAllTickets(status);
+        em.close();
+        return response;
     }
 
     @GET
@@ -145,5 +186,22 @@ public class CrxTicketResource {
         CrxResponse response = new CrxTicketService(session, em).assignTicket(ticketId,userId);
         em.close();
         return response;
+    }
+
+    @POST
+    @ApiOperation(value = "Apply actions on selected tickets.",
+            notes = "Valid actions are:<br>" +
+                    "<li> delete Delete the tickets. Only managers are allowed." +
+                    "<li> close Close the tickets.")
+    @Path("applyAction")
+    @RolesAllowed({"crxticket.worker","crxticket.manager"})
+    public List<CrxResponse> applyAction(
+            @ApiParam(hidden = true) @Auth Session session,
+            CrxActionMap actionMap
+    ){
+        EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+        List<CrxResponse> responses = new CrxTicketService(session, em).applyAction(actionMap);
+        em.close();
+        return responses;
     }
 }
