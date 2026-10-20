@@ -35,6 +35,12 @@ public class CrxTicketArticle extends AbstractEntity{
     @Column(name="text", columnDefinition = "LONGTEXT")
     private String text;
 
+    @Column(name="attachment", columnDefinition = "LONGTEXT")
+    private String attachment;
+
+    @Column(name="attachmentName")
+    private String attachmentName;
+
     public CrxTicketArticle(){
         super();
     }
@@ -81,5 +87,21 @@ public class CrxTicketArticle extends AbstractEntity{
 
     public void setText(String text) {
         this.text = text;
+    }
+
+    public String getAttachment() {
+        return attachment;
+    }
+
+    public void setAttachment(String attachment) {
+        this.attachment = attachment;
+    }
+
+    public String getAttachmentName() {
+        return attachmentName;
+    }
+
+    public void setAttachmentName(String attachmentName) {
+        this.attachmentName = attachmentName;
     }
 }
