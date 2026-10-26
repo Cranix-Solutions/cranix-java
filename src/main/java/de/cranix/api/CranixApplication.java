@@ -136,6 +136,9 @@ public class CranixApplication extends Application<ServerConfiguration> {
         final SystemResource systemResource = new SystemResource();
         environment.jersey().register(systemResource);
 
+        final MailResource mailResource = new MailResource();
+        environment.jersey().register(mailResource);
+
         final UserResource usersResource = new UserResource();
         environment.jersey().register(usersResource);
 

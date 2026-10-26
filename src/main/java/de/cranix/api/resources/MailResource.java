@@ -1,0 +1,253 @@
+/* (c) 2026 Péter Varkoly <peter@varkoly.de> - all rights reserved */
+package de.cranix.api.resources;
+
+import static de.cranix.api.resources.Resource.JSON_UTF8;
+import static de.cranix.helper.CranixConstants.cranixBaseDir;
+
+import de.cranix.dao.CrxResponse;
+import de.cranix.dao.MailFolder;
+import de.cranix.dao.MailMessage;
+import de.cranix.dao.MailSendRequest;
+import de.cranix.dao.Session;
+import de.cranix.helper.CrxEntityManagerFactory;
+import de.cranix.services.MailService;
+import io.dropwizard.auth.Auth;
+import io.swagger.annotations.Api;
+import io.swagger.annotations.ApiOperation;
+import io.swagger.annotations.ApiParam;
+import io.swagger.annotations.ApiResponse;
+import io.swagger.annotations.ApiResponses;
+
+import javax.annotation.security.RolesAllowed;
+import javax.persistence.EntityManager;
+import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.GET;
+import javax.ws.rs.POST;
+import javax.ws.rs.PUT;
+import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
+import javax.ws.rs.Produces;
+import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+
+import org.glassfish.jersey.media.multipart.FormDataBodyPart;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
+import org.glassfish.jersey.media.multipart.FormDataParam;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.InputStream;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@Path("mail")
+@Api(value = "mail")
+@Produces(JSON_UTF8)
+public class MailResource {
+
+	Logger logger = LoggerFactory.getLogger(MailResource.class);
+
+	public MailResource() {
+	}
+
+	@GET
+	@Path("config")
+	@ApiOperation(value = "Gets the mail configuration of the current user.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public Map<String, String> getConfig(@ApiParam(hidden = true) @Auth Session session) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		Map<String, String> resp = new MailService(session, em).getMailConfig();
+		em.close();
+		return resp;
+	}
+
+	@GET
+	@Path("folders")
+	@ApiOperation(value = "Gets the mail folders of the current user.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public List<MailFolder> getFolders(@ApiParam(hidden = true) @Auth Session session) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).getFolders();
+		} catch (Exception e) {
+			logger.error("getFolders: " + e.getMessage(), e);
+			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+		} finally {
+			em.close();
+		}
+	}
+
+	@GET
+	@Path("messages/{folder}")
+	@ApiOperation(value = "Gets the messages of a folder.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public List<MailMessage> getMessages(
+		@ApiParam(hidden = true) @Auth Session session,
+		@PathParam("folder") String folder,
+		@QueryParam("limit") Integer limit,
+		@QueryParam("offset") Integer offset
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			int l = (limit == null || limit <= 0) ? 50 : limit;
+			int o = (offset == null || offset < 0) ? 0 : offset;
+			return new MailService(session, em).getMessages(folder, l, o);
+		} catch (Exception e) {
+			logger.error("getMessages: " + e.getMessage(), e);
+			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+		} finally {
+			em.close();
+		}
+	}
+
+	@GET
+	@Path("message/{folder}/{uid}")
+	@ApiOperation(value = "Gets a single message inclusive its body and attachments.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public MailMessage getMessage(
+		@ApiParam(hidden = true) @Auth Session session,
+		@PathParam("folder") String folder,
+		@PathParam("uid") long uid
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).getMessage(folder, uid);
+		} catch (Exception e) {
+			logger.error("getMessage: " + e.getMessage(), e);
+			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+		} finally {
+			em.close();
+		}
+	}
+
+	@GET
+	@Path("message/{folder}/{uid}/attachment/{part}")
+	@Produces(MediaType.APPLICATION_OCTET_STREAM)
+	@ApiOperation(value = "Delivers an attachment of a message.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public Response getAttachment(
+		@ApiParam(hidden = true) @Auth Session session,
+		@PathParam("folder") String folder,
+		@PathParam("uid") long uid,
+		@PathParam("part") int part
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			byte[] content = new MailService(session, em).getAttachment(folder, uid, part);
+			return Response.ok(content)
+				.header("Content-Disposition", "attachment")
+				.build();
+		} catch (Exception e) {
+			logger.error("getAttachment: " + e.getMessage(), e);
+			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+		} finally {
+			em.close();
+		}
+	}
+
+	@POST
+	@Path("send")
+	@Consumes(MediaType.MULTIPART_FORM_DATA)
+	@ApiOperation(value = "Sends a mail with optional attachments.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse sendMail(
+		@ApiParam(hidden = true) @Auth Session session,
+		@FormDataParam("to") String to,
+		@FormDataParam("cc") String cc,
+		@FormDataParam("bcc") String bcc,
+		@FormDataParam("subject") String subject,
+		@FormDataParam("body") String body,
+		@FormDataParam("files") List<FormDataBodyPart> files
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			MailSendRequest request = new MailSendRequest();
+			request.setTo(to);
+			request.setCc(cc);
+			request.setBcc(bcc);
+			request.setSubject(subject);
+			request.setBody(body);
+			Map<String, byte[]> attachments = new LinkedHashMap<String, byte[]>();
+			if (files != null) {
+				for (FormDataBodyPart file : files) {
+					FormDataContentDisposition disposition = file.getFormDataContentDisposition();
+					if (disposition == null || disposition.getFileName() == null || disposition.getFileName().isEmpty()) {
+						continue;
+					}
+					InputStream is = file.getValueAs(InputStream.class);
+					if (is != null) {
+						attachments.put(disposition.getFileName(), is.readAllBytes());
+					}
+				}
+			}
+			return new MailService(session, em).sendMail(request, attachments);
+		} catch (Exception e) {
+			logger.error("sendMail: " + e.getMessage(), e);
+			return new CrxResponse("ERROR", "The mail could not be sent: " + e.getMessage());
+		} finally {
+			em.close();
+		}
+	}
+
+	@DELETE
+	@Path("message/{folder}/{uid}")
+	@ApiOperation(value = "Deletes a message.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse deleteMessage(
+		@ApiParam(hidden = true) @Auth Session session,
+		@PathParam("folder") String folder,
+		@PathParam("uid") long uid
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).deleteMessage(folder, uid);
+		} finally {
+			em.close();
+		}
+	}
+
+	@PUT
+	@Path("message/{folder}/{uid}/seen/{seen}")
+	@ApiOperation(value = "Sets or removes the seen flag of a message.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse setSeen(
+		@ApiParam(hidden = true) @Auth Session session,
+		@PathParam("folder") String folder,
+		@PathParam("uid") long uid,
+		@PathParam("seen") boolean seen
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).setSeen(folder, uid, seen);
+		} finally {
+			em.close();
+		}
+	}
+}
