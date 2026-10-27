@@ -150,9 +150,9 @@ public class Session implements Principal {
 		if (getClass() != obj.getClass())
 			return false;
 		Session other = (Session) obj;
-		if (id != other.id)
+		if (id == null || other.id == null)
 			return false;
-		return true;
+		return id.equals(other.id);
 	}
 
 	@Override

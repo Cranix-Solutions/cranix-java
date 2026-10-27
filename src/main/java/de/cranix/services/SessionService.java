@@ -57,6 +57,35 @@ public class SessionService extends Service {
         }
     }
 
+    /**
+     * Remove all sessions belonging to a device. This has to be used before deleting a device
+     * because the sessions reference the device by a foreign key. The device.sessions JPA
+     * collection can be stale (EclipseLink shared cache), so the sessions are looked up freshly
+     * and also removed from the in memory session cache.
+     *
+     * @param deviceId The id of the device whose sessions have to be deleted.
+     */
+    public void deleteSessionsOfDevice(Long deviceId) {
+        if (deviceId == null) {
+            return;
+        }
+        try {
+            this.em.getTransaction().begin();
+            Query q = this.em.createQuery("SELECT s FROM Session s WHERE s.device.id = :deviceId");
+            q.setParameter("deviceId", deviceId);
+            for (Session deviceSession : (List<Session>) q.getResultList()) {
+                sessions.remove(deviceSession.getToken());
+                this.em.remove(deviceSession);
+            }
+            this.em.getTransaction().commit();
+        } catch (Exception e) {
+            if (this.em.getTransaction().isActive()) {
+                this.em.getTransaction().rollback();
+            }
+            logger.error("deleteSessionsOfDevice: " + e.getMessage(), e);
+        }
+    }
+
     public Session createSessionWithUser(String username, String password, Long crx2faSessionId) {
         UserService userService = new UserService(this.session, this.em);
         DeviceService deviceService = new DeviceService(this.session, this.em);

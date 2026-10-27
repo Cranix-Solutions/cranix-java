@@ -138,10 +138,12 @@ public class DeviceService extends Service {
                     this.em.getTransaction().rollback();
                     return new CrxResponse("ERROR", "You must not delete the device on which you are logged in.");
                 }
-                this.em.remove(deviceSession);
             }
             this.em.getTransaction().commit();
             logger.debug("Transaction 1 closed.");
+            //The device.sessions collection can be stale (EclipseLink shared cache) so the
+            //sessions are looked up freshly to be deleted before the device itself.
+            new SessionService(this.session, this.em).deleteSessionsOfDevice(device.getId());
             this.em.getTransaction().begin();
             if (hwconf != null) {
                 //Remove device from the hwconf.
