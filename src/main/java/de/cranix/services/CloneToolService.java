@@ -15,6 +15,7 @@ import javax.persistence.EntityManager;
 import javax.persistence.Query;
 
 import de.cranix.dao.Clone;
+import de.cranix.dao.Category;
 import de.cranix.dao.Device;
 import de.cranix.dao.HWConf;
 import de.cranix.dao.Partition;
@@ -305,16 +306,20 @@ public class CloneToolService extends Service {
 		try {
 			this.em.getTransaction().begin();
 			HWConf hwconf = this.em.find(HWConf.class, hwconfId);
-		if( this.isProtected(hwconf)) {
-		    return new CrxResponse("ERROR","This hardware configuration must not be deleted.");
-		}
-		if( !this.mayModify(hwconf) ) {
-			return new CrxResponse("ERROR","You must not delete this hardware configuration.");
-		}
-		startPlugin("delete_hwconf", hwconf);
-			if( ! this.em.contains(hwconf)) {
-				hwconf = this.em.merge(hwconf);
+			if( hwconf == null ) {
+				//Nothing to do. The hardware configuration does not exist (anymore).
+				this.em.getTransaction().rollback();
+				return new CrxResponse("OK", "Hardware configuration was deleted successfully.");
 			}
+			if( this.isProtected(hwconf)) {
+				this.em.getTransaction().rollback();
+				return new CrxResponse("ERROR","This hardware configuration must not be deleted.");
+			}
+			if( !this.mayModify(hwconf) ) {
+				this.em.getTransaction().rollback();
+				return new CrxResponse("ERROR","You must not delete this hardware configuration.");
+			}
+			startPlugin("delete_hwconf", hwconf);
 			for( Device o : hwconf.getDevices() ) {
 				o.setHwconf(null);
 				this.em.merge(o);
@@ -323,10 +328,17 @@ public class CloneToolService extends Service {
 				o.setHwconf(null);
 				this.em.merge(o);
 			}
+			for( Category o : hwconf.getCategories() ) {
+				o.getHwconfs().remove(hwconf);
+				this.em.merge(o);
+			}
 			this.em.remove(hwconf);
 			this.em.getTransaction().commit();
 			this.em.getEntityManagerFactory().getCache().evictAll();
 		} catch (Exception e) {
+			if( this.em.getTransaction().isActive() ) {
+				this.em.getTransaction().rollback();
+			}
 			logger.error("delete: " + e.getMessage());
 			return new CrxResponse("ERROR", e.getMessage());
 		}
