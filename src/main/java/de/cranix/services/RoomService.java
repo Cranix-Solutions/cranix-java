@@ -875,7 +875,7 @@ public class RoomService extends Service {
             device.setName(owner.getUid().replaceAll("_", "-").replaceAll("\\.", "") + "-" + name.toLowerCase().trim());
             device.setIp(ipAddress.get(0).split(" ")[0]);
             device.setHwconf(hwconf);
-            device.setCreator(owner);
+            device.setCreator(this.em.find(User.class, owner.getId()));
         } else {
             device.setMac(macAddress);
             device.setIp(ipAddress.get(0).split(" ")[0]);
@@ -885,8 +885,8 @@ public class RoomService extends Service {
                 device.setName(name.toLowerCase().trim());
             }
             device.setHwconf(room.getHwconf());
-            logger.debug("Sysadmin register:" + device.getMac() + "#" + device.getIp() + "#" + device.getName());
         }
+        logger.debug("Register device: " + device.getMac() + "#" + device.getIp() + "#" + device.getName());
         //Check if the Device settings are OK
         DeviceService deviceService = new DeviceService(this.session, this.em);
         logger.debug("DEVICE " + device);
@@ -903,12 +903,11 @@ public class RoomService extends Service {
                 this.em.merge(hwconf);
             }
             this.em.merge(room);
-            if (!owner.getRole().contains("sysadmins")) {
-                owner.getOwnedDevices().add(device);
-                this.em.merge(owner);
-            }
             this.em.getTransaction().commit();
         } catch (Exception e) {
+            if (this.em.getTransaction().isActive()) {
+                this.em.getTransaction().rollback();
+            }
             logger.error("addDevice: " + e.getMessage());
             return new CrxResponse("ERROR", "Error by registering: " + e.getMessage());
         }
