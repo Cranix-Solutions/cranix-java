@@ -530,6 +530,15 @@ public class RoomService extends Service {
             }
         }
         if (subNetwork != null) {
+            Set<String> usedIPs = new HashSet<String>();
+            for (Object[] ips : (List<Object[]>) this.em.createNamedQuery("Device.findAllIPs").getResultList()) {
+                if (ips[0] != null && !ips[0].toString().isEmpty()) {
+                    usedIPs.add(ips[0].toString());
+                }
+                if (ips[1] != null && !ips[1].toString().isEmpty()) {
+                    usedIPs.add(ips[1].toString());
+                }
+            }
             String firstIP = subNetwork.getBase();
             String lastIP = subNetwork.getLast();
             int i = 0;
@@ -537,8 +546,7 @@ public class RoomService extends Service {
                 if (IP.equals(lastIP) || IP.equals(firstIP)) {
                     continue;
                 }
-                String name = this.isIPUnique(IP);
-                if (name.isEmpty()) {
+                if (!usedIPs.contains(IP)) {
                     availableIPs.add(String.format("%s %s-pc%02d", IP, room.getName().replace("_", "-").toLowerCase(), i));
                 }
                 if (count > 0 && availableIPs.size() == count) {
@@ -840,12 +848,6 @@ public class RoomService extends Service {
     }
 
     public CrxResponse addDevice(long roomId, String macAddress, String name) {
-        // First we check if there is enough IP-Addresses in this room
-        List<String> ipAddress = this.getAvailableIPAddresses(roomId, 1);
-        if (ipAddress.isEmpty()) {
-            return new CrxResponse("ERROR", "There are no more free ip addresses in this room.");
-        }
-        logger.debug("IPAddr" + ipAddress);
         Device device = new Device();
         Room room = this.em.find(Room.class, roomId);
         User owner = this.session.getUser();
@@ -866,6 +868,14 @@ public class RoomService extends Service {
             if (ownedDevicesInRoom >= room.getPlaces()) {
                 return new CrxResponse("ERROR", "You must not register more devices in this room.");
             }
+        }
+        // Now we check if there is enough IP-Addresses in this room
+        List<String> ipAddress = this.getAvailableIPAddresses(roomId, 1);
+        if (ipAddress.isEmpty()) {
+            return new CrxResponse("ERROR", "There are no more free ip addresses in this room.");
+        }
+        logger.debug("IPAddr" + ipAddress);
+        if (!owner.getRole().contains("sysadmins")) {
             if (hwconf == null) {
                 Query query = this.em.createNamedQuery("HWConf.getByName");
                 query.setParameter("name", "BYOD");

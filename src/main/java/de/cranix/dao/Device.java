@@ -32,6 +32,7 @@ import java.util.List;
         @NamedQuery(name = "Device.getByMainIP", query = "SELECT d FROM Device d where d.ip = :IP"),
         @NamedQuery(name = "Device.getByMAC", query = "SELECT d FROM Device d where d.mac = :MAC OR d.wlanMac = :MAC"),
         @NamedQuery(name = "Device.getByName", query = "SELECT d FROM Device d where d.name = :name"),
+        @NamedQuery(name = "Device.findAllIPs", query = "SELECT d.ip, d.wlanIp FROM Device d"),
         @NamedQuery(name = "Device.search", query = "SELECT d FROM Device d where d.name LIKE :search OR d.ip LIKE :search OR d.wlanIp LIKE :search OR d.mac LIKE :search OR d.wlanMac LIKE :search"),
 })
 @SequenceGenerator(name = "seq", initialValue = 1, allocationSize = 100)
