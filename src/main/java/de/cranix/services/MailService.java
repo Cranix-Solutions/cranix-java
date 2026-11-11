@@ -10,6 +10,7 @@ import de.cranix.dao.Session;
 
 import jakarta.activation.DataHandler;
 import jakarta.activation.DataSource;
+import jakarta.mail.AuthenticationFailedException;
 import jakarta.mail.Authenticator;
 import jakarta.mail.BodyPart;
 import jakarta.mail.Flags;
@@ -29,6 +30,10 @@ import jakarta.mail.util.ByteArrayDataSource;
 
 import javax.persistence.EntityManager;
 import java.io.InputStream;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.LinkedHashMap;
@@ -43,7 +48,11 @@ public class MailService extends Service {
     }
 
     public String getMailServer() {
-        return this.getConfigValue("MAILSERVER");
+        String mailserver = this.getConfigValue("MAILSERVER");
+        if (mailserver == null || mailserver.isEmpty()) {
+            mailserver = "localhost";
+        }
+        return mailserver;
     }
 
     public String getMailDomain() {
@@ -190,6 +199,43 @@ public class MailService extends Service {
         return store;
     }
 
+    private String mailErrorMessage(Throwable e, int port) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof AuthenticationFailedException) {
+                return "Authentication at the mail server failed.";
+            }
+            if (cause instanceof UnknownHostException) {
+                return "The mail server " + getMailServer() + " could not be found.";
+            }
+            if (cause instanceof SocketTimeoutException) {
+                return "Timeout while contacting the mail server " + getMailServer() + ".";
+            }
+            if (cause instanceof ConnectException || cause instanceof NoRouteToHostException) {
+                return "Cannot connect to the mail server " + getMailServer() + ":" + port + ".";
+            }
+            cause = cause.getCause();
+        }
+        String message = e.getMessage();
+        return (message == null || message.isEmpty()) ? e.toString() : message;
+    }
+
+    public static boolean isConnectionError(Throwable e) {
+        Throwable cause = e;
+        while (cause != null) {
+            if (cause instanceof ConnectException || cause instanceof NoRouteToHostException
+                    || cause instanceof UnknownHostException || cause instanceof SocketTimeoutException) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
+    private CrxResponse mailError(Exception e) {
+        return new CrxResponse("ERROR", mailErrorMessage(e, getImapPort()));
+    }
+
     private String folderType(String name) {
         String n = name.toLowerCase();
         if (n.equals("inbox")) {
@@ -241,6 +287,8 @@ public class MailService extends Service {
                         messageCount,
                         unreadCount));
             }
+        } catch (Exception e) {
+            throw new Exception(mailErrorMessage(e, getImapPort()), e);
         } finally {
             if (store != null && store.isConnected()) {
                 store.close();
@@ -318,6 +366,8 @@ public class MailService extends Service {
             for (int i = msgs.length - 1; i >= 0; i--) {
                 messages.add(toSummary(folderName, msgs[i]));
             }
+        } catch (Exception e) {
+            throw new Exception(mailErrorMessage(e, getImapPort()), e);
         } finally {
             if (folder != null && folder.isOpen()) {
                 folder.close(false);
@@ -402,6 +452,8 @@ public class MailService extends Service {
             parseMessage(message, mail);
             mail.setHasAttachments(!mail.getAttachments().isEmpty());
             return mail;
+        } catch (Exception e) {
+            throw new Exception(mailErrorMessage(e, getImapPort()), e);
         } finally {
             if (folder != null && folder.isOpen()) {
                 folder.close(false);
@@ -511,6 +563,8 @@ public class MailService extends Service {
             }
             InputStream is = attachments.get(partIndex).getInputStream();
             return is.readAllBytes();
+        } catch (Exception e) {
+            throw new Exception(mailErrorMessage(e, getImapPort()), e);
         } finally {
             if (folder != null && folder.isOpen()) {
                 folder.close(false);
@@ -523,9 +577,6 @@ public class MailService extends Service {
 
     public CrxResponse sendMail(MailSendRequest request, Map<String, byte[]> attachments) {
         try {
-            if (getMailServer() == null || getMailServer().isEmpty()) {
-                return new CrxResponse("ERROR", "The mail server is not configured (MAILSERVER).");
-            }
             if (request.getTo() == null || request.getTo().trim().isEmpty()) {
                 return new CrxResponse("ERROR", "No recipient was given.");
             }
@@ -542,11 +593,11 @@ public class MailService extends Service {
             message.setSubject(request.getSubject() == null ? "" : request.getSubject(), "UTF-8");
             message.setSentDate(new Date());
             if (attachments == null || attachments.isEmpty()) {
-                message.setText(request.getBody() == null ? "" : request.getBody(), "UTF-8");
+                message.setText(request.getBody() == null ? "" : request.getBody(), "UTF-8", "html");
             } else {
                 MimeMultipart multipart = new MimeMultipart();
                 MimeBodyPart textPart = new MimeBodyPart();
-                textPart.setText(request.getBody() == null ? "" : request.getBody(), "UTF-8");
+                textPart.setText(request.getBody() == null ? "" : request.getBody(), "UTF-8", "html");
                 multipart.addBodyPart(textPart);
                 for (Map.Entry<String, byte[]> entry : attachments.entrySet()) {
                     MimeBodyPart attachmentPart = new MimeBodyPart();
@@ -565,8 +616,9 @@ public class MailService extends Service {
             appendToSent(message);
             return new CrxResponse("OK", "The mail was sent successfully.");
         } catch (Exception e) {
-            logger.error("sendMail: " + e.getMessage(), e);
-            return new CrxResponse("ERROR", "The mail could not be sent: " + e.getMessage());
+            logger.warn("sendMail: " + mailErrorMessage(e, getSmtpPort()));
+            logger.debug("sendMail", e);
+            return new CrxResponse("ERROR", "The mail could not be sent: " + mailErrorMessage(e, getSmtpPort()));
         }
     }
 
@@ -626,8 +678,9 @@ public class MailService extends Service {
             message.setFlag(flag, value);
             return new CrxResponse("OK", successMessage);
         } catch (Exception e) {
-            logger.error("setFlag: " + e.getMessage(), e);
-            return new CrxResponse("ERROR", e.getMessage());
+            logger.warn("setFlag: " + mailErrorMessage(e, getImapPort()));
+            logger.debug("setFlag", e);
+            return mailError(e);
         } finally {
             try {
                 if (folder != null && folder.isOpen()) {
@@ -643,6 +696,80 @@ public class MailService extends Service {
             } catch (Exception e) {
                 logger.error(e.getMessage());
             }
+        }
+    }
+
+    private void closeStore(Store store) {
+        try {
+            if (store != null && store.isConnected()) {
+                store.close();
+            }
+        } catch (Exception e) {
+            logger.error(e.getMessage());
+        }
+    }
+
+    public CrxResponse createFolder(String folderName, String parentName) {
+        Store store = null;
+        try {
+            if (folderName == null || folderName.trim().isEmpty()) {
+                return new CrxResponse("ERROR", "No folder name was given.");
+            }
+            store = openStore();
+            String name = folderName.trim();
+            Folder parent = store.getDefaultFolder();
+            if (parentName != null && !parentName.trim().isEmpty()) {
+                Folder candidate = store.getFolder(parentName.trim());
+                if (candidate == null || !candidate.exists()) {
+                    return new CrxResponse("ERROR", "Folder not found: " + parentName);
+                }
+                parent = candidate;
+            } else if (name.contains("/")) {
+                String path = name.substring(0, name.lastIndexOf('/'));
+                Folder candidate = store.getFolder(path);
+                if (candidate != null && candidate.exists()) {
+                    parent = candidate;
+                }
+                name = name.substring(name.lastIndexOf('/') + 1);
+            }
+            Folder target = parent.getFolder(name);
+            if (target.exists()) {
+                return new CrxResponse("ERROR", "The folder already exists: " + folderName);
+            }
+            if (!target.create(Folder.HOLDS_MESSAGES)) {
+                return new CrxResponse("ERROR", "The folder could not be created: " + folderName);
+            }
+            return new CrxResponse("OK", "The folder was created successfully.");
+        } catch (Exception e) {
+            logger.warn("createFolder: " + mailErrorMessage(e, getImapPort()));
+            logger.debug("createFolder", e);
+            return mailError(e);
+        } finally {
+            closeStore(store);
+        }
+    }
+
+    public CrxResponse deleteFolder(String folderName) {
+        Store store = null;
+        try {
+            if (folderName == null || folderName.trim().isEmpty()) {
+                return new CrxResponse("ERROR", "No folder name was given.");
+            }
+            store = openStore();
+            Folder folder = store.getFolder(folderName.trim());
+            if (folder == null || !folder.exists()) {
+                return new CrxResponse("ERROR", "Folder not found: " + folderName);
+            }
+            if (!folder.delete(false)) {
+                return new CrxResponse("ERROR", "The folder could not be deleted: " + folderName);
+            }
+            return new CrxResponse("OK", "The folder was deleted successfully.");
+        } catch (Exception e) {
+            logger.warn("deleteFolder: " + mailErrorMessage(e, getImapPort()));
+            logger.debug("deleteFolder", e);
+            return mailError(e);
+        } finally {
+            closeStore(store);
         }
     }
 }

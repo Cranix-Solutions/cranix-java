@@ -79,8 +79,7 @@ public class MailResource {
 		try {
 			return new MailService(session, em).getFolders();
 		} catch (Exception e) {
-			logger.error("getFolders: " + e.getMessage(), e);
-			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+			throw mailError("getFolders", e);
 		} finally {
 			em.close();
 		}
@@ -105,8 +104,7 @@ public class MailResource {
 			int o = (offset == null || offset < 0) ? 0 : offset;
 			return new MailService(session, em).getMessages(folder, l, o);
 		} catch (Exception e) {
-			logger.error("getMessages: " + e.getMessage(), e);
-			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+			throw mailError("getMessages", e);
 		} finally {
 			em.close();
 		}
@@ -128,8 +126,7 @@ public class MailResource {
 		try {
 			return new MailService(session, em).getMessage(folder, uid);
 		} catch (Exception e) {
-			logger.error("getMessage: " + e.getMessage(), e);
-			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+			throw mailError("getMessage", e);
 		} finally {
 			em.close();
 		}
@@ -156,8 +153,7 @@ public class MailResource {
 				.header("Content-Disposition", "attachment")
 				.build();
 		} catch (Exception e) {
-			logger.error("getAttachment: " + e.getMessage(), e);
-			throw new javax.ws.rs.WebApplicationException(e.getMessage(), Response.Status.INTERNAL_SERVER_ERROR);
+			throw mailError("getAttachment", e);
 		} finally {
 			em.close();
 		}
@@ -203,7 +199,8 @@ public class MailResource {
 			}
 			return new MailService(session, em).sendMail(request, attachments);
 		} catch (Exception e) {
-			logger.error("sendMail: " + e.getMessage(), e);
+			logger.warn("sendMail: " + e.getMessage());
+			logger.debug("sendMail", e);
 			return new CrxResponse("ERROR", "The mail could not be sent: " + e.getMessage());
 		} finally {
 			em.close();
@@ -225,6 +222,10 @@ public class MailResource {
 		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
 		try {
 			return new MailService(session, em).deleteMessage(folder, uid);
+		} catch (Exception e) {
+			logger.warn("deleteMessage: " + e.getMessage());
+			logger.debug("deleteMessage", e);
+			return new CrxResponse("ERROR", e.getMessage());
 		} finally {
 			em.close();
 		}
@@ -246,8 +247,72 @@ public class MailResource {
 		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
 		try {
 			return new MailService(session, em).setSeen(folder, uid, seen);
+		} catch (Exception e) {
+			logger.warn("setSeen: " + e.getMessage());
+			logger.debug("setSeen", e);
+			return new CrxResponse("ERROR", e.getMessage());
 		} finally {
 			em.close();
 		}
+	}
+
+	@POST
+	@Path("folder")
+	@ApiOperation(value = "Creates a mail folder.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse createFolder(
+		@ApiParam(hidden = true) @Auth Session session,
+		@QueryParam("name") String name,
+		@QueryParam("parent") String parent
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).createFolder(name, parent);
+		} catch (Exception e) {
+			logger.warn("createFolder: " + e.getMessage());
+			logger.debug("createFolder", e);
+			return new CrxResponse("ERROR", e.getMessage());
+		} finally {
+			em.close();
+		}
+	}
+
+	@DELETE
+	@Path("folder")
+	@ApiOperation(value = "Deletes a mail folder.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse deleteFolder(
+		@ApiParam(hidden = true) @Auth Session session,
+		@QueryParam("name") String name
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).deleteFolder(name);
+		} catch (Exception e) {
+			logger.warn("deleteFolder: " + e.getMessage());
+			logger.debug("deleteFolder", e);
+			return new CrxResponse("ERROR", e.getMessage());
+		} finally {
+			em.close();
+		}
+	}
+
+	private javax.ws.rs.WebApplicationException mailError(String method, Exception e) {
+		Response.Status status = MailService.isConnectionError(e)
+			? Response.Status.SERVICE_UNAVAILABLE
+			: Response.Status.INTERNAL_SERVER_ERROR;
+		logger.warn(method + ": " + e.getMessage());
+		logger.debug(method, e);
+		return new javax.ws.rs.WebApplicationException(
+			Response.status(status)
+				.entity(new CrxResponse("ERROR", e.getMessage()))
+				.type(MediaType.APPLICATION_JSON_TYPE)
+				.build());
 	}
 }

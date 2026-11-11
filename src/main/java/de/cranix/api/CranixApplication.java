@@ -136,6 +136,7 @@ public class CranixApplication extends Application<ServerConfiguration> {
         final SystemResource systemResource = new SystemResource();
         environment.jersey().register(systemResource);
 
+	// TODO: we have to check if mailserver is configured
         final MailResource mailResource = new MailResource();
         environment.jersey().register(mailResource);
 
