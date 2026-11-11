@@ -39,6 +39,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -231,6 +232,55 @@ public class MailResource {
 		}
 	}
 
+	@DELETE
+	@Path("messages")
+	@ApiOperation(value = "Deletes multiple messages.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse deleteMessages(
+		@ApiParam(hidden = true) @Auth Session session,
+		@QueryParam("folder") String folder,
+		@QueryParam("uids") String uids
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).deleteMessages(folder, parseUids(uids));
+		} catch (Exception e) {
+			logger.warn("deleteMessages: " + e.getMessage());
+			logger.debug("deleteMessages", e);
+			return new CrxResponse("ERROR", e.getMessage());
+		} finally {
+			em.close();
+		}
+	}
+
+	@POST
+	@Path("move")
+	@ApiOperation(value = "Moves messages into another folder.")
+	@ApiResponses(value = {
+		@ApiResponse(code = 500, message = "Server broken, please contact administrator")
+	})
+	@RolesAllowed("mail.use")
+	public CrxResponse moveMessages(
+		@ApiParam(hidden = true) @Auth Session session,
+		@QueryParam("folder") String folder,
+		@QueryParam("uids") String uids,
+		@QueryParam("target") String target
+	) {
+		EntityManager em = CrxEntityManagerFactory.instance().createEntityManager();
+		try {
+			return new MailService(session, em).moveMessages(folder, parseUids(uids), target);
+		} catch (Exception e) {
+			logger.warn("moveMessages: " + e.getMessage());
+			logger.debug("moveMessages", e);
+			return new CrxResponse("ERROR", e.getMessage());
+		} finally {
+			em.close();
+		}
+	}
+
 	@PUT
 	@Path("message/{folder}/{uid}/seen/{seen}")
 	@ApiOperation(value = "Sets or removes the seen flag of a message.")
@@ -301,6 +351,18 @@ public class MailResource {
 		} finally {
 			em.close();
 		}
+	}
+
+	private List<Long> parseUids(String uids) {
+		List<Long> result = new ArrayList<Long>();
+		if (uids != null) {
+			for (String uid : uids.split(",")) {
+				if (!uid.trim().isEmpty()) {
+					result.add(Long.parseLong(uid.trim()));
+				}
+			}
+		}
+		return result;
 	}
 
 	private javax.ws.rs.WebApplicationException mailError(String method, Exception e) {

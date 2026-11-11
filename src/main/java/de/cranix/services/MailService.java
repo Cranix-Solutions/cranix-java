@@ -657,6 +657,102 @@ public class MailService extends Service {
         return setFlag(folderName, uid, Flags.Flag.DELETED, true, "The message was deleted successfully.");
     }
 
+    public CrxResponse deleteMessages(String folderName, List<Long> uids) {
+        Store store = null;
+        Folder folder = null;
+        try {
+            if (folderName == null || folderName.trim().isEmpty()) {
+                return new CrxResponse("ERROR", "No folder was given.");
+            }
+            if (uids == null || uids.isEmpty()) {
+                return new CrxResponse("ERROR", "No message was given.");
+            }
+            store = openStore();
+            folder = store.getFolder(folderName);
+            if (folder == null || !folder.exists()) {
+                return new CrxResponse("ERROR", "Folder not found: " + folderName);
+            }
+            folder.open(Folder.READ_WRITE);
+            for (Long uid : uids) {
+                Message message = getMessageByUid(folder, uid);
+                if (message == null) {
+                    return new CrxResponse("ERROR", "Message not found: " + uid);
+                }
+                message.setFlag(Flags.Flag.DELETED, true);
+            }
+            return new CrxResponse("OK", "The messages were deleted successfully.");
+        } catch (Exception e) {
+            logger.warn("deleteMessages: " + mailErrorMessage(e, getImapPort()));
+            logger.debug("deleteMessages", e);
+            return mailError(e);
+        } finally {
+            try {
+                if (folder != null && folder.isOpen()) {
+                    folder.close(true);
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+            closeStore(store);
+        }
+    }
+
+    public CrxResponse moveMessages(String sourceFolderName, List<Long> uids, String targetFolderName) {
+        Store store = null;
+        Folder source = null;
+        try {
+            if (uids == null || uids.isEmpty()) {
+                return new CrxResponse("ERROR", "No message was given.");
+            }
+            if (sourceFolderName == null || sourceFolderName.trim().isEmpty()) {
+                return new CrxResponse("ERROR", "No source folder was given.");
+            }
+            if (targetFolderName == null || targetFolderName.trim().isEmpty()) {
+                return new CrxResponse("ERROR", "No target folder was given.");
+            }
+            if (sourceFolderName.trim().equals(targetFolderName.trim())) {
+                return new CrxResponse("ERROR", "The target folder must be different from the source folder.");
+            }
+            store = openStore();
+            source = store.getFolder(sourceFolderName.trim());
+            Folder target = store.getFolder(targetFolderName.trim());
+            if (source == null || !source.exists()) {
+                return new CrxResponse("ERROR", "Folder not found: " + sourceFolderName);
+            }
+            if (target == null || !target.exists()) {
+                return new CrxResponse("ERROR", "Folder not found: " + targetFolderName);
+            }
+            source.open(Folder.READ_WRITE);
+            Message[] messages = new Message[uids.size()];
+            int i = 0;
+            for (Long uid : uids) {
+                Message message = getMessageByUid(source, uid);
+                if (message == null) {
+                    return new CrxResponse("ERROR", "Message not found: " + uid);
+                }
+                messages[i++] = message;
+            }
+            source.copyMessages(messages, target);
+            for (Message message : messages) {
+                message.setFlag(Flags.Flag.DELETED, true);
+            }
+            return new CrxResponse("OK", "The messages were moved successfully.");
+        } catch (Exception e) {
+            logger.warn("moveMessages: " + mailErrorMessage(e, getImapPort()));
+            logger.debug("moveMessages", e);
+            return mailError(e);
+        } finally {
+            try {
+                if (source != null && source.isOpen()) {
+                    source.close(true);
+                }
+            } catch (Exception e) {
+                logger.error(e.getMessage());
+            }
+            closeStore(store);
+        }
+    }
+
     public CrxResponse setSeen(String folderName, long uid, boolean seen) {
         return setFlag(folderName, uid, Flags.Flag.SEEN, seen, "The message was modified successfully.");
     }
